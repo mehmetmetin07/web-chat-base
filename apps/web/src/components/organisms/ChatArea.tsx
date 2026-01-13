@@ -6,15 +6,44 @@ import { Input } from "@/components/atoms/Input";
 import { useChat } from "@/hooks/useChat";
 import { supabase } from "@/lib/supabase";
 
+function MessageSkeleton() {
+    return (
+        <div className="flex flex-col gap-4 animate-pulse">
+            <div className="flex items-start gap-2">
+                <div className="h-8 w-8 rounded-full bg-gray-200" />
+                <div className="flex-1">
+                    <div className="h-4 w-24 bg-gray-200 rounded mb-2" />
+                    <div className="h-16 w-3/4 bg-gray-200 rounded" />
+                </div>
+            </div>
+            <div className="flex items-start gap-2 justify-end">
+                <div className="flex-1 flex flex-col items-end">
+                    <div className="h-4 w-20 bg-gray-200 rounded mb-2" />
+                    <div className="h-12 w-2/3 bg-gray-200 rounded" />
+                </div>
+            </div>
+            <div className="flex items-start gap-2">
+                <div className="h-8 w-8 rounded-full bg-gray-200" />
+                <div className="flex-1">
+                    <div className="h-4 w-28 bg-gray-200 rounded mb-2" />
+                    <div className="h-10 w-1/2 bg-gray-200 rounded" />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function ChatArea({ channelId = "general" }: { channelId?: string }) {
     const { messages, loading, sendMessage } = useChat(channelId);
     const [newMessage, setNewMessage] = useState("");
     const [userId, setUserId] = useState<string | null>(null);
+    const [authLoading, setAuthLoading] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
             setUserId(data.user?.id ?? null);
+            setAuthLoading(false);
         });
     }, []);
 
@@ -28,6 +57,8 @@ export function ChatArea({ channelId = "general" }: { channelId?: string }) {
         setNewMessage("");
     };
 
+    const isLoading = loading || authLoading;
+
     return (
         <div className="flex h-full flex-1 flex-col bg-white">
             <div className="flex h-14 items-center justify-between border-b px-4">
@@ -35,8 +66,12 @@ export function ChatArea({ channelId = "general" }: { channelId?: string }) {
             </div>
             <div className="flex-1 overflow-auto p-4">
                 <div className="flex flex-col gap-4">
-                    {loading ? (
-                        <div className="text-center text-sm text-gray-500">Loading messages...</div>
+                    {isLoading ? (
+                        <MessageSkeleton />
+                    ) : messages.length === 0 ? (
+                        <div className="text-center text-sm text-gray-500 py-8">
+                            No messages yet. Start the conversation!
+                        </div>
                     ) : (
                         messages.map((msg) => (
                             <div
@@ -73,18 +108,13 @@ export function ChatArea({ channelId = "general" }: { channelId?: string }) {
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                        disabled={!userId}
+                        disabled={isLoading || !userId}
                         className="flex-1"
                     />
-                    <Button onClick={handleSend} disabled={!userId || !newMessage.trim()}>
+                    <Button onClick={handleSend} disabled={isLoading || !userId || !newMessage.trim()}>
                         Send
                     </Button>
                 </div>
-                {!userId && (
-                    <p className="mt-2 text-xs text-red-500 text-center">
-                        You must be logged in to send messages.
-                    </p>
-                )}
             </div>
         </div>
     );

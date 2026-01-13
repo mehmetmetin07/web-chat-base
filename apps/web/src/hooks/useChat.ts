@@ -11,20 +11,28 @@ type Message = Database["public"]["Tables"]["messages"]["Row"] & {
 export function useChat(channelId: string) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!channelId) {
+            setLoading(false);
+            return;
+        }
+
         const fetchMessages = async () => {
-            const { data, error } = await supabase
+            setError(null);
+            const { data, error: fetchError } = await supabase
                 .from("messages")
                 .select("*, users(*)")
                 .eq("group_id", channelId)
                 .order("created_at", { ascending: true });
 
-            if (error) {
-                console.error("Error fetching messages:", error);
-            } else {
-                setMessages((data as any) || []);
+            if (fetchError) {
+                if (fetchError.code !== "PGRST116") {
+                    setError(fetchError.message);
+                }
             }
+            setMessages((data as any) || []);
             setLoading(false);
         };
 
@@ -65,17 +73,17 @@ export function useChat(channelId: string) {
     }, [channelId]);
 
     const sendMessage = async (content: string, senderId: string) => {
-        const { error } = await supabase.from("messages").insert({
+        const { error: sendError } = await supabase.from("messages").insert({
             content,
             sender_id: senderId,
             group_id: channelId,
             type: "text",
         });
 
-        if (error) {
-            console.error("Error sending message:", error);
+        if (sendError) {
+            setError(sendError.message);
         }
     };
 
-    return { messages, loading, sendMessage };
+    return { messages, loading, error, sendMessage };
 }

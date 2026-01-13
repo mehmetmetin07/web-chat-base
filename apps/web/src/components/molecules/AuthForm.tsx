@@ -1,46 +1,53 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 
 export function AuthForm() {
-    const router = useRouter();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [isLogin, setIsLogin] = useState(true);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setErrorMsg(null);
+        setSuccessMsg(null);
 
-        if (isLogin) {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-            if (error) {
-                setErrorMsg(error.message);
+        try {
+            if (isLogin) {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                });
+
+                if (error) {
+                    setErrorMsg(error.message);
+                } else if (data.user) {
+                    setSuccessMsg("Login successful! Redirecting...");
+                    window.location.href = "/channels";
+                }
             } else {
-                router.refresh();
-                router.push("/channels");
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                });
+
+                if (error) {
+                    setErrorMsg(error.message);
+                } else {
+                    setSuccessMsg("Account created! Check your email or try logging in.");
+                }
             }
-        } else {
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-            });
-            if (error) {
-                setErrorMsg(error.message);
-            } else {
-                setErrorMsg("Check your email for the login link!");
-            }
+        } catch (err) {
+            setErrorMsg("An unexpected error occurred");
         }
+
         setLoading(false);
     };
 
@@ -64,13 +71,17 @@ export function AuthForm() {
                 />
                 <Input
                     type="password"
-                    placeholder="Password"
+                    placeholder="Password (min 6 characters)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    minLength={6}
                 />
                 {errorMsg && (
                     <p className="text-sm text-red-500 text-center">{errorMsg}</p>
+                )}
+                {successMsg && (
+                    <p className="text-sm text-green-500 text-center">{successMsg}</p>
                 )}
                 <Button type="submit" disabled={loading}>
                     {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
