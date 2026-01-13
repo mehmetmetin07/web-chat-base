@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Home, Settings, Users, Hash, Plus } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Home, Settings, Users, Hash, Plus, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChannels } from "@/hooks/useChannels";
 import { CreateChannelModal } from "@/components/molecules/CreateChannelModal";
@@ -15,19 +15,28 @@ interface SidebarProps {
 
 export function Sidebar({ className }: SidebarProps) {
     const pathname = usePathname();
+    const router = useRouter();
     const { channels, loading, createChannel } = useChannels();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
+    const [userEmail, setUserEmail] = useState<string | null>(null);
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
             setUserId(data.user?.id ?? null);
+            setUserEmail(data.user?.email ?? null);
         });
     }, []);
 
     const handleCreateChannel = async (name: string) => {
         if (!userId) return;
         await createChannel(name, userId);
+    };
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push("/login");
+        router.refresh();
     };
 
     return (
@@ -89,17 +98,31 @@ export function Sidebar({ className }: SidebarProps) {
                             <Users className="h-4 w-4" />
                             Direct Messages
                         </Link>
-
-                        <div className="mt-auto">
-                            <Link
-                                href="/settings"
-                                className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-500 transition-all hover:text-gray-900"
-                            >
-                                <Settings className="h-4 w-4" />
-                                Settings
-                            </Link>
-                        </div>
                     </nav>
+                </div>
+
+                <div className="border-t p-4">
+                    {userEmail && (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                                    {userEmail.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
+                                        {userEmail.split("@")[0]}
+                                    </span>
+                                    <span className="text-xs text-gray-500">Online</span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleLogout}
+                                className="rounded p-2 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                            >
+                                <LogOut className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
