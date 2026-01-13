@@ -9,6 +9,7 @@
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
+  username TEXT UNIQUE,
   full_name TEXT,
   avatar_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -16,6 +17,9 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+-- Add username column if not exists (for existing databases)
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
 
 DROP POLICY IF EXISTS "Users can view all users" ON public.users;
 CREATE POLICY "Users can view all users"
@@ -79,7 +83,7 @@ CREATE TABLE IF NOT EXISTS public.server_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-  role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
+  role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'moderator', 'member')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(server_id, user_id)
 );

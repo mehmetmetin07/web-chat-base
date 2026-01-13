@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Hash, Plus, LogOut, Copy, Check, Users, Link as LinkIcon } from "lucide-react";
+import { Hash, Plus, LogOut, Copy, Check, Users, Link as LinkIcon, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServerChannels } from "@/hooks/useServerChannels";
 import { useUsers } from "@/hooks/useUsers";
@@ -77,6 +77,12 @@ export function Sidebar({ className, server }: SidebarProps) {
             <div className={cn("flex h-full w-60 flex-col border-r bg-gray-100", className)}>
                 <div className="flex h-12 items-center justify-between border-b px-4 bg-gray-200">
                     <span className="font-semibold truncate">{server.name}</span>
+                    <Link
+                        href={`/servers/${server.id}/settings`}
+                        className="p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-300"
+                    >
+                        <Settings className="h-4 w-4" />
+                    </Link>
                 </div>
 
                 <button
@@ -184,7 +190,10 @@ export function Sidebar({ className, server }: SidebarProps) {
                 <div className="border-t p-3 bg-gray-200">
                     {userEmail && (
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                            <Link
+                                href="/profile"
+                                className="flex items-center gap-2 hover:opacity-80"
+                            >
                                 <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
                                     {userEmail.charAt(0).toUpperCase()}
                                 </div>
@@ -194,7 +203,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                                     </span>
                                     <span className="text-xs text-gray-500">Online</span>
                                 </div>
-                            </div>
+                            </Link>
                             <button
                                 onClick={handleLogout}
                                 className="rounded p-2 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
