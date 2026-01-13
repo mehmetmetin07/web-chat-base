@@ -21,17 +21,17 @@ export function useChat(channelId: string) {
 
         const fetchMessages = async () => {
             setError(null);
+
             const { data, error: fetchError } = await supabase
                 .from("messages")
-                .select("*, users(*)")
+                .select("*, users:sender_id(*)")
                 .eq("group_id", channelId)
                 .order("created_at", { ascending: true });
 
             if (fetchError) {
-                if (fetchError.code !== "PGRST116") {
-                    setError(fetchError.message);
-                }
+                setError(fetchError.message);
             }
+
             setMessages((data as any) || []);
             setLoading(false);
         };
@@ -73,12 +73,14 @@ export function useChat(channelId: string) {
     }, [channelId]);
 
     const sendMessage = async (content: string, senderId: string) => {
-        const { error: sendError } = await supabase.from("messages").insert({
-            content,
-            sender_id: senderId,
-            group_id: channelId,
-            type: "text",
-        });
+        const { error: sendError } = await supabase
+            .from("messages")
+            .insert({
+                content,
+                sender_id: senderId,
+                group_id: channelId,
+                type: "text",
+            });
 
         if (sendError) {
             setError(sendError.message);

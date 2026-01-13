@@ -4,7 +4,9 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { useChat } from "@/hooks/useChat";
+import { useChannelMembers } from "@/hooks/useChannelMembers";
 import { supabase } from "@/lib/supabase";
+import { Users } from "lucide-react";
 
 function MessageSkeleton() {
     return (
@@ -22,22 +24,17 @@ function MessageSkeleton() {
                     <div className="h-12 w-2/3 bg-gray-200 rounded" />
                 </div>
             </div>
-            <div className="flex items-start gap-2">
-                <div className="h-8 w-8 rounded-full bg-gray-200" />
-                <div className="flex-1">
-                    <div className="h-4 w-28 bg-gray-200 rounded mb-2" />
-                    <div className="h-10 w-1/2 bg-gray-200 rounded" />
-                </div>
-            </div>
         </div>
     );
 }
 
-export function ChatArea({ channelId = "general" }: { channelId?: string }) {
+export function ChatArea({ channelId }: { channelId: string }) {
     const { messages, loading, sendMessage } = useChat(channelId);
+    const { members, isMember, loading: membersLoading } = useChannelMembers(channelId);
     const [newMessage, setNewMessage] = useState("");
     const [userId, setUserId] = useState<string | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
+    const [showMembers, setShowMembers] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -57,17 +54,45 @@ export function ChatArea({ channelId = "general" }: { channelId?: string }) {
         setNewMessage("");
     };
 
-    const isLoading = loading || authLoading;
+    const isLoading = loading || authLoading || membersLoading;
 
     return (
         <div className="flex h-full flex-1 flex-col bg-white">
             <div className="flex h-14 items-center justify-between border-b px-4">
-                <div className="font-medium"># {channelId}</div>
+                <div className="font-medium"># {channelId.slice(0, 8)}...</div>
+                <button
+                    onClick={() => setShowMembers(!showMembers)}
+                    className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                >
+                    <Users className="h-4 w-4" />
+                    {members.length}
+                </button>
             </div>
+
+            {showMembers && (
+                <div className="border-b p-3 bg-gray-50">
+                    <div className="text-xs font-medium text-gray-500 mb-2">Server Members ({members.length})</div>
+                    <div className="flex flex-wrap gap-2">
+                        {members.map((member) => (
+                            <div key={member.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded text-xs border">
+                                <div className="h-5 w-5 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs">
+                                    {member.email?.charAt(0).toUpperCase()}
+                                </div>
+                                {member.full_name || member.email?.split("@")[0]}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="flex-1 overflow-auto p-4">
                 <div className="flex flex-col gap-4">
                     {isLoading ? (
                         <MessageSkeleton />
+                    ) : !isMember ? (
+                        <div className="text-center py-8">
+                            <p className="text-gray-500">You are not a member of this server</p>
+                        </div>
                     ) : messages.length === 0 ? (
                         <div className="text-center text-sm text-gray-500 py-8">
                             No messages yet. Start the conversation!
@@ -104,14 +129,14 @@ export function ChatArea({ channelId = "general" }: { channelId?: string }) {
             <div className="p-4">
                 <div className="flex gap-2">
                     <Input
-                        placeholder={`Message # ${channelId}`}
+                        placeholder={isMember ? "Type a message..." : "Join server to send messages"}
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                        disabled={isLoading || !userId}
+                        disabled={isLoading || !userId || !isMember}
                         className="flex-1"
                     />
-                    <Button onClick={handleSend} disabled={isLoading || !userId || !newMessage.trim()}>
+                    <Button onClick={handleSend} disabled={isLoading || !userId || !newMessage.trim() || !isMember}>
                         Send
                     </Button>
                 </div>

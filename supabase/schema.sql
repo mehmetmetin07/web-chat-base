@@ -53,3 +53,22 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Sync existing auth users to users table
+INSERT INTO public.users (id, email)
+SELECT id, email FROM auth.users
+ON CONFLICT (id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.handle_new_group()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.group_members (group_id, user_id, role)
+  VALUES (NEW.id, NEW.owner_id, 'admin');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_group_created ON public.groups;
+CREATE TRIGGER on_group_created
+  AFTER INSERT ON public.groups
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_group();

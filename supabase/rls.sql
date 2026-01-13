@@ -1,8 +1,12 @@
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.group_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
+-- Drop old policies
+DROP POLICY IF EXISTS "View messages in joined groups" ON public.messages;
+DROP POLICY IF EXISTS "Users can send messages" ON public.messages;
+
+-- Users policies
 CREATE POLICY "Users can view all users"
   ON public.users FOR SELECT
   TO authenticated
@@ -13,6 +17,7 @@ CREATE POLICY "Users can update own profile"
   TO authenticated
   USING (auth.uid() = id);
 
+-- Groups (channels) policies
 CREATE POLICY "Anyone can view groups"
   ON public.groups FOR SELECT
   TO authenticated
@@ -33,35 +38,31 @@ CREATE POLICY "Group owners can delete groups"
   TO authenticated
   USING (auth.uid() = owner_id);
 
-CREATE POLICY "View group members"
-  ON public.group_members FOR SELECT
-  TO authenticated
-  USING (true);
-
-CREATE POLICY "Group admins can manage members"
-  ON public.group_members FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.groups
-      WHERE id = group_id AND owner_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "View messages in joined groups"
+-- Messages policies (server-based)
+CREATE POLICY "Server members can view messages"
   ON public.messages FOR SELECT
   TO authenticated
   USING (
     group_id IN (
-      SELECT group_id FROM public.group_members
-      WHERE user_id = auth.uid()
+      SELECT g.id FROM public.groups g
+      JOIN public.server_members sm ON sm.server_id = g.server_id
+      WHERE sm.user_id = auth.uid()
     )
     OR sender_id = auth.uid()
     OR receiver_id = auth.uid()
-    OR group_id IN (SELECT id FROM public.groups)
   );
 
-CREATE POLICY "Users can send messages"
+CREATE POLICY "Server members can send messages"
   ON public.messages FOR INSERT
   TO authenticated
-  WITH CHECK (auth.uid() = sender_id);
+  WITH CHECK (
+    auth.uid() = sender_id
+    AND (
+      group_id IS NULL
+      OR group_id IN (
+        SELECT g.id FROM public.groups g
+        JOIN public.server_members sm ON sm.server_id = g.server_id
+        WHERE sm.user_id = auth.uid()
+      )
+    )
+  );
