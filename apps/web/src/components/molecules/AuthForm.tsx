@@ -1,33 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 
 export function AuthForm() {
+    const router = useRouter();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [isLogin, setIsLogin] = useState(true);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+        setErrorMsg(null);
 
         if (isLogin) {
             const { error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
-            if (error) alert(error.message);
+            if (error) {
+                setErrorMsg(error.message);
+            } else {
+                router.refresh();
+                router.push("/channels");
+            }
         } else {
             const { error } = await supabase.auth.signUp({
                 email,
                 password,
             });
-            if (error) alert(error.message);
-            else alert("Check your email for the login link!");
+            if (error) {
+                setErrorMsg(error.message);
+            } else {
+                setErrorMsg("Check your email for the login link!");
+            }
         }
         setLoading(false);
     };
@@ -57,6 +69,9 @@ export function AuthForm() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                 />
+                {errorMsg && (
+                    <p className="text-sm text-red-500 text-center">{errorMsg}</p>
+                )}
                 <Button type="submit" disabled={loading}>
                     {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
                 </Button>
