@@ -7,8 +7,9 @@ import { Input } from "@/components/atoms/Input";
 import { useChat } from "@/hooks/useChat";
 import { useChannelMembers } from "@/hooks/useChannelMembers";
 import { useServerSettings } from "@/hooks/useServerSettings";
+import { useFileUpload } from "@/hooks/useFileUpload";
 import { supabase } from "@/lib/supabase";
-import { Users, AlertCircle, Smile, X } from "lucide-react";
+import { Users, AlertCircle, Smile, X, Paperclip, File, Image, Download, Loader2 } from "lucide-react";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -43,10 +44,75 @@ function formatTime(dateString: string) {
     return new Date(dateString).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatFileSize(bytes: number) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function FileMessage({ content, type, timestamp }: { content: string; type: string; timestamp: string }) {
+    const isImage = type === "image" || content.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const isVideo = type === "video" || content.match(/\.(mp4|webm|mov)$/i);
+
+    if (isImage) {
+        return (
+            <div className="max-w-sm">
+                <img src={content} alt="Shared image" className="rounded-lg max-h-64 object-cover" />
+                <div className="flex justify-between items-center mt-1">
+                    <a
+                        href={content}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-blue-500 hover:underline"
+                    >
+                        <Download className="h-3 w-3" />
+                        Download
+                    </a>
+                    <span className="text-[10px] text-gray-400">{formatTime(timestamp)}</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (isVideo) {
+        return (
+            <div className="max-w-sm">
+                <video src={content} controls className="rounded-lg max-h-64" />
+                <div className="flex justify-end mt-1">
+                    <span className="text-[10px] text-gray-400">{formatTime(timestamp)}</span>
+                </div>
+            </div>
+        );
+    }
+
+    const fileName = content.split("/").pop() || "File";
+    return (
+        <div>
+            <a
+                href={content}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100"
+            >
+                <File className="h-8 w-8 text-blue-500" />
+                <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{fileName}</div>
+                    <div className="text-xs text-gray-500">Click to download</div>
+                </div>
+                <Download className="h-4 w-4 text-gray-400" />
+            </a>
+            <div className="flex justify-end mt-1">
+                <span className="text-[10px] text-gray-400">{formatTime(timestamp)}</span>
+            </div>
+        </div>
+    );
+}
+
 export function ChatArea({ channelId }: { channelId: string }) {
-    const { messages, loading, sendMessage } = useChat(channelId);
+    const { messages, loading, sendMessage, sendFileMessage } = useChat(channelId);
     const { members, isMember, loading: membersLoading, serverId } = useChannelMembers(channelId);
-    const { checkMessage } = useServerSettings(serverId);
+    const { checkMessage, settings } = useServerSettings(serverId);
+    const { uploadFile, validateFile, uploading, error: uploadError, setError: setUploadError } = useFileUpload(serverId);
     const [newMessage, setNewMessage] = useState("");
     const [userId, setUserId] = useState<string | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
@@ -55,6 +121,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
     const [error, setError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
@@ -82,12 +149,35 @@ export function ChatArea({ channelId }: { channelId: string }) {
         setShowEmoji(false);
     };
 
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !userId) return;
+
+        const allowedTypes = settings?.allowed_file_types || [];
+        const isValid = await validateFile(file, allowedTypes);
+        if (!isValid) return;
+
+        const result = await uploadFile(file);
+        if (result) {
+            let fileType = "file";
+            if (file.type.startsWith("image/")) fileType = "image";
+            else if (file.type.startsWith("video/")) fileType = "video";
+
+            await sendFileMessage(result.url, userId, fileType);
+        }
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
     const onEmojiClick = (emojiData: any) => {
         setNewMessage((prev) => prev + emojiData.emoji);
         inputRef.current?.focus();
     };
 
     const isLoading = loading || authLoading || membersLoading;
+    const displayError = error || uploadError;
 
     const getUserDisplay = (user: any) => ({
         name: user?.username || user?.full_name || user?.email?.split("@")[0] || "Unknown",
@@ -102,7 +192,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
     };
 
     return (
-        <div className="flex h-full flex-1 flex-col bg-white">
+        <div className="flex h-full flex-1 flex-col bg-white relative">
             <div className="flex h-14 items-center justify-between border-b px-4">
                 <div className="font-medium"># {channelId.slice(0, 8)}...</div>
                 <button
@@ -157,6 +247,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
                             const prevMessage = index > 0 ? messages[index - 1] : null;
                             const showHeader = !prevMessage || prevMessage.sender_id !== msg.sender_id;
                             const dateDivider = getDateDivider(msg.created_at, prevMessage?.created_at || null);
+                            const isFile = msg.type === "file" || msg.type === "image" || msg.type === "video";
 
                             return (
                                 <div key={msg.id}>
@@ -188,9 +279,16 @@ export function ChatArea({ channelId }: { channelId: string }) {
                                                     <span className="text-xs text-gray-400">{formatTime(msg.created_at)}</span>
                                                 </div>
                                             )}
-                                            <div className={`rounded-lg px-4 py-2 text-sm ${isOwn ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-100 text-gray-900 rounded-tl-none"}`}>
-                                                {msg.content}
-                                            </div>
+                                            {isFile ? (
+                                                <FileMessage content={msg.content} type={msg.type} timestamp={msg.created_at} />
+                                            ) : (
+                                                <div className={`rounded-lg px-4 py-2 text-sm ${isOwn ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-100 text-gray-900 rounded-tl-none"}`}>
+                                                    {msg.content}
+                                                    <div className={`text-[10px] mt-1 text-right ${isOwn ? "text-blue-200" : "text-gray-500"}`}>
+                                                        {formatTime(msg.created_at)}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -201,10 +299,13 @@ export function ChatArea({ channelId }: { channelId: string }) {
                 </div>
             </div>
 
-            {error && (
+            {displayError && (
                 <div className="mx-4 mb-2 p-2 bg-red-50 border border-red-200 rounded flex items-center gap-2 text-red-700 text-sm">
                     <AlertCircle className="h-4 w-4" />
-                    {error}
+                    {displayError}
+                    <button onClick={() => { setError(null); setUploadError(null); }} className="ml-auto">
+                        <X className="h-4 w-4" />
+                    </button>
                 </div>
             )}
 
@@ -222,8 +323,23 @@ export function ChatArea({ channelId }: { channelId: string }) {
                 </div>
             )}
 
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                className="hidden"
+                accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp4,.mp3"
+            />
+
             <div className="p-4 border-t">
                 <div className="flex gap-2">
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading || !isMember}
+                        className={`p-2 rounded ${uploading ? "text-blue-500" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+                    >
+                        {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+                    </button>
                     <button
                         onClick={() => setShowEmoji(!showEmoji)}
                         className={`p-2 rounded ${showEmoji ? "bg-blue-100 text-blue-600" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}

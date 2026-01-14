@@ -21,7 +21,7 @@ interface SidebarProps {
 export function Sidebar({ className, server }: SidebarProps) {
     const pathname = usePathname();
     const { channels, loading: channelsLoading, createChannel } = useServerChannels(server?.id ?? null);
-    const { users, loading: usersLoading } = useUsers(server?.id);
+    const { users, loading: usersLoading, currentUserProfile } = useUsers(server?.id);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -162,24 +162,47 @@ export function Sidebar({ className, server }: SidebarProps) {
                             <div className="px-2 py-2 text-xs text-gray-400">Loading...</div>
                         ) : (
                             <>
-                                {userEmail && (
-                                    <div className="flex items-center gap-2 rounded px-2 py-1.5 text-gray-600">
-                                        <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs">
-                                            {userEmail.charAt(0).toUpperCase()}
+                                {currentUserProfile && (
+                                    <div className="flex items-center gap-3 rounded px-2 py-2 text-gray-700">
+                                        {currentUserProfile.avatar_url ? (
+                                            <img
+                                                src={currentUserProfile.avatar_url}
+                                                alt={currentUserProfile.full_name || ""}
+                                                className="h-8 w-8 rounded-full object-cover shadow-sm"
+                                            />
+                                        ) : (
+                                            <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center text-white text-sm font-medium shadow-sm">
+                                                {(currentUserProfile.full_name?.[0] || currentUserProfile.email?.charAt(0) || "?").toUpperCase()}
+                                            </div>
+                                        )}
+                                        <div className="flex flex-col overflow-hidden">
+                                            <span className="truncate text-sm font-medium">{currentUserProfile.full_name || currentUserProfile.email?.split("@")[0]}</span>
+                                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">You</span>
                                         </div>
-                                        <span className="truncate">{userEmail.split("@")[0]} (you)</span>
                                     </div>
                                 )}
                                 {users.map((user) => (
                                     <Link
                                         key={user.id}
                                         href={`/servers/${server.id}/dm/${user.id}`}
-                                        className="flex items-center gap-2 rounded px-2 py-1.5 text-gray-600 transition-all hover:bg-gray-200"
+                                        className="group flex items-center gap-3 rounded px-2 py-2 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-900"
                                     >
-                                        <div className="h-5 w-5 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs">
-                                            {user.email?.charAt(0).toUpperCase()}
+                                        <div className="relative">
+                                            {user.avatar_url ? (
+                                                <img
+                                                    src={user.avatar_url}
+                                                    alt={user.full_name || ""}
+                                                    className="h-8 w-8 rounded-full object-cover shadow-sm group-hover:shadow"
+                                                />
+                                            ) : (
+                                                <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium shadow-sm group-hover:shadow">
+                                                    {(user.full_name?.[0] || user.email?.charAt(0) || "?").toUpperCase()}
+                                                </div>
+                                            )}
+                                            {/* Online indicator placeholder - can be hooked up to real presence later */}
+                                            <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-gray-300 border-2 border-white group-hover:border-gray-100"></div>
                                         </div>
-                                        <span className="truncate">{user.full_name || user.email?.split("@")[0]}</span>
+                                        <span className="truncate text-sm font-medium">{user.full_name || user.email?.split("@")[0]}</span>
                                     </Link>
                                 ))}
                             </>
@@ -188,18 +211,26 @@ export function Sidebar({ className, server }: SidebarProps) {
                 </div>
 
                 <div className="border-t p-3 bg-gray-200">
-                    {userEmail && (
+                    {currentUserProfile && (
                         <div className="flex items-center justify-between">
                             <Link
                                 href="/profile"
                                 className="flex items-center gap-2 hover:opacity-80"
                             >
-                                <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                                    {userEmail.charAt(0).toUpperCase()}
+                                <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden">
+                                    {currentUserProfile.avatar_url ? (
+                                        <img
+                                            src={currentUserProfile.avatar_url}
+                                            alt={currentUserProfile.full_name || ""}
+                                            className="h-full w-full object-cover"
+                                        />
+                                    ) : (
+                                        (currentUserProfile.full_name?.[0] || currentUserProfile.email?.charAt(0) || "?").toUpperCase()
+                                    )}
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="text-sm font-medium text-gray-900 truncate max-w-[100px]">
-                                        {userEmail.split("@")[0]}
+                                        {currentUserProfile.full_name || currentUserProfile.email?.split("@")[0]}
                                     </span>
                                     <span className="text-xs text-gray-500">Online</span>
                                 </div>

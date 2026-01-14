@@ -203,6 +203,19 @@ CREATE TABLE IF NOT EXISTS public.messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Rename FK for sender_id to be explicit for PostgREST embedding
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'messages_sender_id_fkey') THEN
+    ALTER TABLE public.messages RENAME CONSTRAINT messages_sender_id_fkey TO messages_sender_fk;
+  END IF;
+END $$;
+
+-- Update messages type check to allow files
+ALTER TABLE public.messages DROP CONSTRAINT IF EXISTS messages_type_check;
+ALTER TABLE public.messages ADD CONSTRAINT messages_type_check 
+  CHECK (type IN ('text', 'image', 'file', 'video'));
+
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "View messages in joined groups" ON public.messages;
@@ -336,3 +349,21 @@ CREATE POLICY "Server owners can manage permissions"
     )
   );
 
+-- =====================
+-- 9. STORAGE POLICIES
+-- =====================
+-- Ensure storage schema exists (it usually does by default in Supabase)
+-- We cannot create buckets via SQL in standard Supabase easily without extensions, 
+-- but we can set policies. Assuming 'chat-files' bucket exists.
+
+DROP POLICY IF EXISTS "Authenticated users can upload chat files" ON storage.objects;
+CREATE POLICY "Authenticated users can upload chat files"
+ON storage.objects FOR INSERT TO authenticated WITH CHECK (
+  bucket_id = 'chat-files'
+);
+
+DROP POLICY IF EXISTS "Anyone can view chat files" ON storage.objects;
+CREATE POLICY "Anyone can view chat files"
+ON storage.objects FOR SELECT TO authenticated USING (
+  bucket_id = 'chat-files'
+);

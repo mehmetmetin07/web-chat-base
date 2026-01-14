@@ -15,11 +15,9 @@ export function useServers() {
         const fetchServers = async () => {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
-                console.log("Current user:", user);
                 setCurrentUserId(user?.id ?? null);
 
                 if (!user?.id) {
-                    console.log("No user logged in");
                     setLoading(false);
                     return;
                 }
@@ -28,8 +26,6 @@ export function useServers() {
                     .from("server_members")
                     .select("server_id")
                     .eq("user_id", user.id);
-
-                console.log("Memberships:", memberships, "Error:", memberError);
 
                 if (!memberships || memberships.length === 0) {
                     setServers([]);
@@ -45,10 +41,8 @@ export function useServers() {
                     .in("id", serverIds)
                     .order("created_at", { ascending: true });
 
-                console.log("Servers:", serversData, "Error:", serverError);
                 setServers(serversData || []);
             } catch (err) {
-                console.error("Fetch error:", err);
                 setServers([]);
             } finally {
                 setLoading(false);
@@ -78,8 +72,6 @@ export function useServers() {
     }, []);
 
     const createServer = async (name: string) => {
-        console.log("Creating server:", name, "User:", currentUserId);
-
         if (!currentUserId) {
             console.error("No current user ID");
             return null;
@@ -94,7 +86,7 @@ export function useServers() {
         console.log("Create result:", data, "Error:", error);
 
         if (error) {
-            console.error("Server create error:", error.message, error.details, error.hint);
+            // console.error("Server create error:", error.message);
         }
 
         if (!error && data) {

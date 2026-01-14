@@ -134,5 +134,41 @@ export function useChat(channelId: string) {
         }
     }, [channelId, currentUser]);
 
-    return { messages, loading, error, sendMessage };
+    const sendFileMessage = useCallback(async (fileUrl: string, senderId: string, fileType: string) => {
+        const tempId = `temp-${Date.now()}`;
+        const optimisticMessage: Message = {
+            id: tempId,
+            content: fileUrl,
+            sender_id: senderId,
+            receiver_id: null,
+            group_id: channelId,
+            type: fileType,
+            created_at: new Date().toISOString(),
+            users: currentUser,
+        };
+
+        setMessages((prev) => [...prev, optimisticMessage]);
+
+        const { data, error: sendError } = await supabase
+            .from("messages")
+            .insert({
+                content: fileUrl,
+                sender_id: senderId,
+                group_id: channelId,
+                type: fileType,
+            })
+            .select()
+            .single();
+
+        if (sendError) {
+            setError(sendError.message);
+            setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        } else if (data) {
+            setMessages((prev) =>
+                prev.map((m) => (m.id === tempId ? { ...m, id: data.id } : m))
+            );
+        }
+    }, [channelId, currentUser]);
+
+    return { messages, loading, error, sendMessage, sendFileMessage };
 }

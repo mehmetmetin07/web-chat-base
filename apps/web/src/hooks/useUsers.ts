@@ -10,6 +10,7 @@ export function useUsers(serverId?: string | null) {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserProfile, setCurrentUserProfile] = useState<User | null>(null);
 
     useEffect(() => {
         const fetchServerMembers = async () => {
@@ -21,6 +22,17 @@ export function useUsers(serverId?: string | null) {
                 if (!myId) {
                     setLoading(false);
                     return;
+                }
+
+                // Fetch current user profile
+                const { data: myProfile } = await supabase
+                    .from("users")
+                    .select("*")
+                    .eq("id", myId)
+                    .single();
+
+                if (myProfile) {
+                    setCurrentUserProfile(myProfile);
                 }
 
                 if (!serverId) {
@@ -60,5 +72,5 @@ export function useUsers(serverId?: string | null) {
         fetchServerMembers();
     }, [serverId]);
 
-    return { users, loading, currentUserId };
+    return { users, loading, currentUserId, currentUserProfile };
 }
