@@ -367,3 +367,108 @@ CREATE POLICY "Anyone can view chat files"
 ON storage.objects FOR SELECT TO authenticated USING (
   bucket_id = 'chat-files'
 );
+
+-- =====================
+-- 10. ADVANCED ROLE SYSTEM
+-- =====================
+
+-- 10.1 SERVER ROLES
+CREATE TABLE IF NOT EXISTS public.server_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#99aab5', -- default grey
+  position INT DEFAULT 0,
+  permissions JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(server_id, name)
+);
+
+ALTER TABLE public.server_roles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view server roles" ON public.server_roles;
+CREATE POLICY "Anyone can view server roles"
+  ON public.server_roles FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server owners can manage roles" ON public.server_roles;
+CREATE POLICY "Server owners can manage roles"
+  ON public.server_roles FOR ALL TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+  );
+
+-- 10.2 SERVER MEMBER ROLES (Many-to-Many)
+CREATE TABLE IF NOT EXISTS public.server_member_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  role_id UUID REFERENCES public.server_roles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, role_id)
+);
+
+ALTER TABLE public.server_member_roles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view member roles" ON public.server_member_roles;
+CREATE POLICY "Anyone can view member roles"
+  ON public.server_member_roles FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server owners can manage member roles" ON public.server_member_roles;
+CREATE POLICY "Server owners can manage member roles"
+  ON public.server_member_roles FOR ALL TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+  );
+
+-- Indexes for Role System
+CREATE INDEX IF NOT EXISTS idx_server_roles_server_id ON public.server_roles(server_id);
+CREATE INDEX IF NOT EXISTS idx_server_member_roles_server_id ON public.server_member_roles(server_id);
+CREATE INDEX IF NOT EXISTS idx_server_member_roles_user_id ON public.server_member_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_server_member_roles_role_id ON public.server_member_roles(role_id);
+
+-- Trigger to create default roles when a server is created
+CREATE OR REPLACE FUNCTION public.handle_new_server_roles()
+RETURNS TRIGGER AS $$
+DECLARE
+  owner_role_id UUID;
+  admin_role_id UUID;
+  member_role_id UUID;
+BEGIN
+  -- Create Owner Role (highest pos)
+  INSERT INTO public.server_roles (server_id, name, color, position, permissions)
+  VALUES (NEW.id, 'Owner', '#e74c3c', 100, '{"ADMINISTRATOR": true}')
+  RETURNING id INTO owner_role_id;
+
+  -- Create Member Role (lowest pos)
+  INSERT INTO public.server_roles (server_id, name, color, position, permissions)
+  VALUES (NEW.id, 'Member', '#99aab5', 0, '{"SEND_MESSAGES": true}')
+  RETURNING id INTO member_role_id;
+
+  -- Assign Owner Role to the creator
+  INSERT INTO public.server_member_roles (server_id, user_id, role_id)
+  VALUES (NEW.id, NEW.owner_id, owner_role_id);
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_server_created_roles ON public.servers;
+CREATE TRIGGER on_server_created_roles
+  AFTER INSERT ON public.servers
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_server_roles();
+
+-- =====================
+-- 11. REALTIME CONFIGURATION
+-- =====================
+-- Enable Realtime for tables
+BEGIN;
+  DROP PUBLICATION IF EXISTS supabase_realtime;
+  CREATE PUBLICATION supabase_realtime;
+COMMIT;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.users;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.server_members;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.server_member_roles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.server_roles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.groups;
+

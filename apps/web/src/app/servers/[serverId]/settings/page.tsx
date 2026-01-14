@@ -4,8 +4,10 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
+import { RoleManagement } from "@/components/organisms/RoleManagement";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeft, Crown, Shield, User, UserX, Ban, Undo2, AlertTriangle, FileType, MessageSquare } from "lucide-react";
+import { useServerPermissions } from "@/hooks/useServerPermissions";
+import { ArrowLeft, Crown, Shield, User, UserX, Ban, Undo2, AlertTriangle, FileType, MessageSquare, Search, MoreVertical, Check } from "lucide-react";
 import { Database } from "@/types/supabase";
 
 type ServerMember = {
@@ -62,13 +64,13 @@ export default function ServerSettingsPage({
     const [bannedUsers, setBannedUsers] = useState<BannedUser[]>([]);
     const [settings, setSettings] = useState<ServerSettings | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-    const [isOwner, setIsOwner] = useState(false);
+    const { can, loading: permsLoading, isOwner } = useServerPermissions(serverId);
     const [serverName, setServerName] = useState("");
     const [serverRules, setServerRules] = useState("");
     const [bannedWordsText, setBannedWordsText] = useState("");
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<"general" | "members" | "bans" | "automod">("general");
+    const [activeTab, setActiveTab] = useState<"general" | "roles" | "members" | "bans" | "automod">("general");
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -89,7 +91,6 @@ export default function ServerSettingsPage({
                 setServer(serverData);
                 setServerName(serverData.name);
                 setServerRules(serverData.description || "");
-                setIsOwner(serverData.owner_id === user.id);
             }
 
             const { data: membersData } = await supabase
@@ -128,7 +129,7 @@ export default function ServerSettingsPage({
     }, [serverId, router]);
 
     const handleSaveServer = async () => {
-        if (!isOwner || !server) return;
+        if ((!can("MANAGE_SERVER") && !isOwner) || !server) return;
         setSaving(true);
         setMessage(null);
 
@@ -146,7 +147,7 @@ export default function ServerSettingsPage({
     };
 
     const handleSaveAutoMod = async () => {
-        if (!isOwner || !settings) return;
+        if ((!can("MANAGE_SERVER") && !isOwner) || !settings) return;
         setSaving(true);
         setMessage(null);
 
@@ -177,7 +178,7 @@ export default function ServerSettingsPage({
     };
 
     const handleRoleChange = async (memberId: string, userId: string, newRole: string) => {
-        if (!isOwner || userId === currentUserId) return;
+        if ((!can("MANAGE_ROLES") && !can("ADMINISTRATOR") && !isOwner) || userId === currentUserId) return;
 
         const { error } = await supabase
             .from("server_members")
@@ -192,7 +193,7 @@ export default function ServerSettingsPage({
     };
 
     const handleKick = async (memberId: string, userId: string) => {
-        if (!isOwner || userId === currentUserId) return;
+        if ((!can("KICK_MEMBERS") && !can("ADMINISTRATOR") && !isOwner) || userId === currentUserId) return;
 
         const { error } = await supabase
             .from("server_members")
@@ -205,7 +206,7 @@ export default function ServerSettingsPage({
     };
 
     const handleBan = async (memberId: string, userId: string, reason: string = "") => {
-        if (!isOwner || userId === currentUserId) return;
+        if ((!can("BAN_MEMBERS") && !can("ADMINISTRATOR") && !isOwner) || userId === currentUserId) return;
 
         const member = members.find((m) => m.id === memberId);
         if (!member) return;
@@ -230,7 +231,7 @@ export default function ServerSettingsPage({
     };
 
     const handleUnban = async (banId: string) => {
-        if (!isOwner) return;
+        if (!can("BAN_MEMBERS") && !can("ADMINISTRATOR") && !isOwner) return;
 
         const { error } = await supabase.from("server_bans").delete().eq("id", banId);
 
@@ -261,7 +262,7 @@ export default function ServerSettingsPage({
         }
     };
 
-    if (loading) {
+    if (loading || permsLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full" />
@@ -269,12 +270,12 @@ export default function ServerSettingsPage({
         );
     }
 
-    if (!isOwner) {
+    if (!can("ADMINISTRATOR") && !can("MANAGE_SERVER") && !isOwner) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="text-center">
                     <h1 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h1>
-                    <p className="text-gray-500 mb-4">Only server owners can access settings</p>
+                    <p className="text-gray-500 mb-4">You do not have permission to manage this server</p>
                     <Button onClick={() => router.back()}>Go Back</Button>
                 </div>
             </div>
@@ -300,6 +301,13 @@ export default function ServerSettingsPage({
                         className={`px-4 py-2 rounded ${activeTab === "general" ? "bg-blue-600 text-white" : "bg-white border"}`}
                     >
                         General
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("roles")}
+                        className={`px-4 py-2 rounded flex items-center gap-2 ${activeTab === "roles" ? "bg-blue-600 text-white" : "bg-white border"}`}
+                    >
+                        <Shield className="h-4 w-4" />
+                        Roles
                     </button>
                     <button
                         onClick={() => setActiveTab("automod")}
@@ -359,6 +367,8 @@ export default function ServerSettingsPage({
                     </div>
                 )}
 
+                {activeTab === "roles" && <RoleManagement serverId={serverId} />}
+
                 {activeTab === "automod" && settings && (
                     <div className="space-y-6">
                         <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -387,8 +397,8 @@ export default function ServerSettingsPage({
                                     <label
                                         key={type.value}
                                         className={`flex items-center gap-2 px-3 py-2 rounded border cursor-pointer ${settings.allowed_file_types?.includes(type.value)
-                                                ? "bg-blue-50 border-blue-500 text-blue-700"
-                                                : "bg-gray-50"
+                                            ? "bg-blue-50 border-blue-500 text-blue-700"
+                                            : "bg-gray-50"
                                             }`}
                                     >
                                         <input
@@ -481,41 +491,91 @@ export default function ServerSettingsPage({
 
                 {activeTab === "members" && (
                     <div className="bg-white rounded-lg shadow-sm border p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Members</h2>
-                        <div className="space-y-3">
-                            {members.map((member) => (
-                                <div key={member.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900">Members</h2>
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                                <Input
+                                    placeholder="Search members..."
+                                    className="pl-9 w-64"
+                                    onChange={(e) => {
+                                        // Simple client-side search for now
+                                        const query = e.target.value.toLowerCase();
+                                        setMembers(prev => prev.map(m => ({
+                                            ...m, hidden:
+                                                !(m.users?.username?.toLowerCase().includes(query) ||
+                                                    m.users?.full_name?.toLowerCase().includes(query) ||
+                                                    m.users?.email?.toLowerCase().includes(query))
+                                        })));
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            {members.filter((m: any) => !m.hidden).map((member) => (
+                                <div key={member.id} className="flex items-center justify-between py-3 px-2 rounded hover:bg-gray-50 group">
                                     <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
-                                            {member.users?.email?.charAt(0).toUpperCase()}
-                                        </div>
+                                        {member.users?.avatar_url ? (
+                                            <img
+                                                src={member.users.avatar_url}
+                                                alt={member.users.username || "User"}
+                                                className="h-10 w-10 rounded-full object-cover border"
+                                            />
+                                        ) : (
+                                            <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
+                                                {member.users?.email?.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+
                                         <div>
                                             <div className="flex items-center gap-2">
                                                 <span className="font-medium text-gray-900">
-                                                    {member.users?.username || member.users?.full_name || member.users?.email?.split("@")[0]}
+                                                    {member.users?.full_name || member.users?.username || "Unknown User"}
                                                 </span>
                                                 {getRoleIcon(member.role)}
                                             </div>
-                                            <span className="text-sm text-gray-500">{member.users?.email}</span>
+                                            <div className="text-sm text-gray-500 font-mono">
+                                                @{member.users?.username || member.users?.email?.split("@")[0]}
+                                            </div>
                                         </div>
                                     </div>
+
                                     {member.user_id !== currentUserId && (
-                                        <div className="flex items-center gap-2">
-                                            <select
-                                                value={member.role}
-                                                onChange={(e) => handleRoleChange(member.id, member.user_id, e.target.value)}
-                                                className="text-sm border rounded px-2 py-1"
-                                            >
-                                                <option value="member">Member</option>
-                                                <option value="moderator">Moderator</option>
-                                                <option value="admin">Admin</option>
-                                            </select>
-                                            <button onClick={() => handleKick(member.id, member.user_id)} className="p-2 text-orange-500 hover:bg-orange-50 rounded" title="Kick">
-                                                <UserX className="h-4 w-4" />
+                                        <div className="relative group/menu">
+                                            <button className="p-2 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+                                                <MoreVertical className="h-4 w-4" />
                                             </button>
-                                            <button onClick={() => handleBan(member.id, member.user_id)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="Ban">
-                                                <Ban className="h-4 w-4" />
-                                            </button>
+
+                                            <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border z-50 hidden group-hover/menu:block hover:block">
+                                                <div className="py-1">
+                                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Change Role</div>
+                                                    {["member", "moderator", "admin"].map((role) => (
+                                                        <button
+                                                            key={role}
+                                                            onClick={() => handleRoleChange(member.id, member.user_id, role)}
+                                                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center justify-between ${member.role === role ? "text-blue-600 font-medium" : "text-gray-700"}`}
+                                                        >
+                                                            {role.charAt(0).toUpperCase() + role.slice(1)}
+                                                            {member.role === role && <Check className="h-4 w-4" />}
+                                                        </button>
+                                                    ))}
+                                                    <div className="border-t my-1"></div>
+                                                    <button
+                                                        onClick={() => handleKick(member.id, member.user_id)}
+                                                        className="w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 flex items-center gap-2"
+                                                    >
+                                                        <UserX className="h-4 w-4" />
+                                                        Kick Member
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleBan(member.id, member.user_id)}
+                                                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                                    >
+                                                        <Ban className="h-4 w-4" />
+                                                        Ban Member
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

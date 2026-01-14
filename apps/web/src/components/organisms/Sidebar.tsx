@@ -10,6 +10,7 @@ import { useUsers } from "@/hooks/useUsers";
 import { CreateChannelModal } from "@/components/molecules/CreateChannelModal";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
+import { useServerPermissions } from "@/hooks/useServerPermissions";
 
 type Server = Database["public"]["Tables"]["servers"]["Row"];
 
@@ -20,9 +21,11 @@ interface SidebarProps {
 
 export function Sidebar({ className, server }: SidebarProps) {
     const pathname = usePathname();
-    const { channels, loading: channelsLoading, createChannel } = useServerChannels(server?.id ?? null);
-    const { users, loading: usersLoading, currentUserProfile } = useUsers(server?.id);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const activeServerId = server?.id ?? null; // Added activeServerId for clarity and consistency
+    const { channels, loading: channelsLoading, createChannel } = useServerChannels(activeServerId);
+    const { users, members, loading: usersLoading, currentUserProfile } = useUsers(activeServerId);
+    const { can, isOwner } = useServerPermissions(activeServerId || ""); // Added useServerPermissions
+    const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false); // Renamed and initialized
     const [userId, setUserId] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -77,12 +80,14 @@ export function Sidebar({ className, server }: SidebarProps) {
             <div className={cn("flex h-full w-60 flex-col border-r bg-gray-100", className)}>
                 <div className="flex h-12 items-center justify-between border-b px-4 bg-gray-200">
                     <span className="font-semibold truncate">{server.name}</span>
-                    <Link
-                        href={`/servers/${server.id}/settings`}
-                        className="p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-300"
-                    >
-                        <Settings className="h-4 w-4" />
-                    </Link>
+                    {(activeServerId && (isOwner || can("ADMINISTRATOR") || can("MANAGE_SERVER"))) && (
+                        <Link
+                            href={`/servers/${server.id}/settings`}
+                            className="p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-300"
+                        >
+                            <Settings className="h-4 w-4" />
+                        </Link>
+                    )}
                 </div>
 
                 <button
@@ -126,7 +131,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                                 Text Channels
                             </span>
                             <button
-                                onClick={() => setIsModalOpen(true)}
+                                onClick={() => setIsCreateChannelOpen(true)}
                                 className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
                                 disabled={!userId}
                             >
@@ -155,7 +160,7 @@ export function Sidebar({ className, server }: SidebarProps) {
 
                         <div className="flex items-center justify-between px-2 mt-4 mb-1">
                             <span className="text-xs font-semibold uppercase text-gray-500">
-                                Members ({users.length + 1})
+                                Members ({members?.length || 0})
                             </span>
                         </div>
                         {usersLoading ? (
@@ -163,7 +168,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                         ) : (
                             <>
                                 {currentUserProfile && (
-                                    <div className="flex items-center gap-3 rounded px-2 py-2 text-gray-700">
+                                    <div className="flex items-center gap-3 rounded px-2 py-2 text-gray-700 mb-2">
                                         {currentUserProfile.avatar_url ? (
                                             <img
                                                 src={currentUserProfile.avatar_url}
@@ -181,30 +186,66 @@ export function Sidebar({ className, server }: SidebarProps) {
                                         </div>
                                     </div>
                                 )}
-                                {users.map((user) => (
-                                    <Link
-                                        key={user.id}
-                                        href={`/servers/${server.id}/dm/${user.id}`}
-                                        className="group flex items-center gap-3 rounded px-2 py-2 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-900"
-                                    >
-                                        <div className="relative">
-                                            {user.avatar_url ? (
-                                                <img
-                                                    src={user.avatar_url}
-                                                    alt={user.full_name || ""}
-                                                    className="h-8 w-8 rounded-full object-cover shadow-sm group-hover:shadow"
-                                                />
-                                            ) : (
-                                                <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium shadow-sm group-hover:shadow">
-                                                    {(user.full_name?.[0] || user.email?.charAt(0) || "?").toUpperCase()}
-                                                </div>
-                                            )}
-                                            {/* Online indicator placeholder - can be hooked up to real presence later */}
-                                            <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-gray-300 border-2 border-white group-hover:border-gray-100"></div>
+
+                                {(() => {
+                                    // Group members by role
+                                    const groupedMembers: Record<string, typeof members> = {};
+                                    const roleOrder: Record<string, number> = {};
+                                    const roleColors: Record<string, string> = {};
+
+                                    members?.forEach(member => {
+                                        const roleName = member.highestRole?.name || "Member";
+                                        const roleId = member.highestRole?.id || "default";
+                                        const position = member.highestRole?.position ?? -1;
+
+                                        if (!groupedMembers[roleName]) {
+                                            groupedMembers[roleName] = [];
+                                            roleOrder[roleName] = position;
+                                            roleColors[roleName] = member.highestRole?.color || "#99aab5";
+                                        }
+                                        groupedMembers[roleName].push(member);
+                                    });
+
+                                    // Sort roles by position (descending)
+                                    const sortedRoles = Object.keys(groupedMembers).sort((a, b) => roleOrder[b] - roleOrder[a]);
+
+                                    return sortedRoles.map(role => (
+                                        <div key={role} className="mb-4">
+                                            <div className="px-2 text-[10px] font-bold uppercase text-gray-400 mb-1">
+                                                {role as string} — {groupedMembers[role as string].length}
+                                            </div>
+                                            {groupedMembers[role as string].map(member => (
+                                                <Link
+                                                    key={member.id}
+                                                    href={`/servers/${server.id}/dm/${member.id}`}
+                                                    className="group flex items-center gap-3 rounded px-2 py-2 text-gray-600 transition-all hover:bg-gray-200"
+                                                >
+                                                    <div className="relative">
+                                                        {member.avatar_url ? (
+                                                            <img
+                                                                src={member.avatar_url}
+                                                                alt={member.full_name || ""}
+                                                                className="h-8 w-8 rounded-full object-cover shadow-sm group-hover:shadow"
+                                                            />
+                                                        ) : (
+                                                            <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium shadow-sm group-hover:shadow">
+                                                                {(member.full_name?.[0] || member.email?.charAt(0) || "?").toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        {/* Online indicator */}
+                                                        <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-gray-300 border-2 border-white group-hover:border-gray-100"></div>
+                                                    </div>
+                                                    <span
+                                                        className="truncate text-sm font-medium transition-colors"
+                                                        style={{ color: member.highestRole?.color || "#374151" }}
+                                                    >
+                                                        {member.full_name || member.email?.split("@")[0]}
+                                                    </span>
+                                                </Link>
+                                            ))}
                                         </div>
-                                        <span className="truncate text-sm font-medium">{user.full_name || user.email?.split("@")[0]}</span>
-                                    </Link>
-                                ))}
+                                    ));
+                                })()}
                             </>
                         )}
                     </nav>
@@ -247,8 +288,8 @@ export function Sidebar({ className, server }: SidebarProps) {
             </div>
 
             <CreateChannelModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                isOpen={isCreateChannelOpen}
+                onClose={() => setIsCreateChannelOpen(false)}
                 onSubmit={handleCreateChannel}
             />
         </>

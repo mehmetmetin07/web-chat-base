@@ -16,11 +16,6 @@ export function useFileUpload(serverId: string | null) {
     const [progress, setProgress] = useState(0);
 
     const uploadFile = async (file: File): Promise<UploadResult | null> => {
-        if (!serverId) {
-            setError("No server selected");
-            return null;
-        }
-
         setUploading(true);
         setError(null);
         setProgress(0);
@@ -32,7 +27,9 @@ export function useFileUpload(serverId: string | null) {
             }
 
             const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
-            const fileName = `${serverId}/${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+            // Use 'dm' prefix if no serverId
+            const pathPrefix = serverId ? `${serverId}/${user.id}` : `dm/${user.id}`;
+            const fileName = `${pathPrefix}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
             const { data, error: uploadError } = await supabase.storage
                 .from("chat-files")

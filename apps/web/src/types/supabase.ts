@@ -148,6 +148,58 @@ export interface Database {
                     created_at?: string;
                 };
             };
+            server_roles: {
+                Row: {
+                    id: string;
+                    server_id: string;
+                    name: string;
+                    color: string | null;
+                    position: number;
+                    permissions: Json | null;
+                    created_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    server_id: string;
+                    name: string;
+                    color?: string | null;
+                    position?: number;
+                    permissions?: Json | null;
+                    created_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    server_id?: string;
+                    name?: string;
+                    color?: string | null;
+                    position?: number;
+                    permissions?: Json | null;
+                    created_at?: string;
+                };
+            };
+            server_member_roles: {
+                Row: {
+                    id: string;
+                    server_id: string;
+                    user_id: string;
+                    role_id: string;
+                    created_at: string;
+                };
+                Insert: {
+                    id?: string;
+                    server_id: string;
+                    user_id: string;
+                    role_id: string;
+                    created_at?: string;
+                };
+                Update: {
+                    id?: string;
+                    server_id?: string;
+                    user_id?: string;
+                    role_id?: string;
+                    created_at?: string;
+                };
+            };
         };
     };
 }

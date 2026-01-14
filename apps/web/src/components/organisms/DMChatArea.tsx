@@ -1,11 +1,13 @@
-"use client";
-
-import { useEffect, useState, useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { useDM } from "@/hooks/useDM";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
+import { Smile, Paperclip, X } from "lucide-react";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
+import { useFileUpload } from "@/hooks/useFileUpload";
+import { FileMessage } from "../molecules/FileMessage";
 
 type User = Database["public"]["Tables"]["users"]["Row"];
 
@@ -34,6 +36,12 @@ export function DMChatArea({ userId }: { userId: string }) {
     const [otherUser, setOtherUser] = useState<User | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // Features state
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { uploadFile, uploading: isUploading } = useFileUpload(null); // Pass null for DM
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
     useEffect(() => {
         if (userId) {
             supabase
@@ -50,25 +58,57 @@ export function DMChatArea({ userId }: { userId: string }) {
     }, [messages]);
 
     const handleSend = async () => {
-        if (!newMessage.trim()) return;
-        await sendMessage(newMessage);
-        setNewMessage("");
+        if ((!newMessage.trim() && !selectedFile) || isUploading) return;
+
+        if (selectedFile) {
+            const result = await uploadFile(selectedFile);
+            if (result && result.url) {
+                const type = result.fileType.startsWith("image/") ? "image" : result.fileType.startsWith("video/") ? "video" : "file";
+                await sendMessage(result.url, type as "image" | "video" | "file");
+            }
+            setSelectedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+
+        if (newMessage.trim()) {
+            await sendMessage(newMessage, "text");
+            setNewMessage("");
+        }
+        setShowEmojiPicker(false);
+    };
+
+    const onEmojiClick = (emojiData: EmojiClickData) => {
+        setNewMessage((prev) => prev + emojiData.emoji);
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setSelectedFile(e.target.files[0]);
+        }
     };
 
     return (
         <div className="flex h-full flex-1 flex-col bg-white">
             <div className="flex h-14 items-center justify-between border-b px-4">
                 <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                        {otherUser?.email?.charAt(0).toUpperCase() || "?"}
-                    </div>
+                    {otherUser?.avatar_url ? (
+                        <img
+                            src={otherUser.avatar_url}
+                            alt={otherUser.full_name || "User"}
+                            className="h-8 w-8 rounded-full object-cover"
+                        />
+                    ) : (
+                        <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                            {otherUser?.email?.charAt(0).toUpperCase() || "?"}
+                        </div>
+                    )}
                     <div className="font-medium">
                         {otherUser?.full_name || otherUser?.email?.split("@")[0] || "Loading..."}
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-                <div className="flex flex-col gap-4">
+            <div className="flex-1 overflow-auto p-4 relative" onClick={() => setShowEmojiPicker(false)}>
+                <div className="flex flex-col gap-1">
                     {loading ? (
                         <MessageSkeleton />
                     ) : messages.length === 0 ? (
@@ -76,41 +116,130 @@ export function DMChatArea({ userId }: { userId: string }) {
                             No messages yet. Say hi!
                         </div>
                     ) : (
-                        messages.map((msg) => (
-                            <div
-                                key={msg.id}
-                                className={`flex flex-col ${msg.sender_id === currentUserId ? "items-end" : "items-start"
-                                    }`}
-                            >
+                        messages.map((msg, index) => {
+                            const isOwn = msg.sender_id === currentUserId;
+                            const prevMsg = messages[index - 1];
+                            const isSameSender = prevMsg && prevMsg.sender_id === msg.sender_id;
+                            const isNearTime = prevMsg && (new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() < 5 * 60 * 1000);
+                            const showHeader = !isSameSender || !isNearTime;
+
+                            const isFile = msg.type === "file" || msg.type === "image" || msg.type === "video";
+
+                            // Use User profile from message join logic
+                            const user = msg.users;
+                            const displayName = user?.full_name || user?.email?.split("@")[0] || "Unknown";
+                            const avatarUrl = user?.avatar_url;
+                            const initial = (user?.full_name?.[0] || user?.email?.charAt(0) || "?").toUpperCase();
+
+                            return (
                                 <div
-                                    className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${msg.sender_id === currentUserId
-                                            ? "bg-blue-600 text-white"
-                                            : "bg-gray-100 text-gray-900"
-                                        }`}
+                                    key={msg.id}
+                                    className={`group flex items-start gap-4 px-2 py-0.5 mt-2 ${isOwn ? "flex-row-reverse" : ""}`}
                                 >
-                                    {msg.content}
+                                    {showHeader ? (
+                                        avatarUrl ? (
+                                            <img
+                                                src={avatarUrl}
+                                                alt={displayName}
+                                                className="h-10 w-10 rounded-full object-cover mt-0.5 cursor-pointer hover:opacity-80"
+                                            />
+                                        ) : (
+                                            <div className={`h-10 w-10 rounded-full flex flex-shrink-0 items-center justify-center text-white font-medium mt-0.5 cursor-pointer hover:opacity-80 ${isOwn ? "bg-blue-600" : "bg-indigo-500"}`}>
+                                                {initial}
+                                            </div>
+                                        )
+                                    ) : (
+                                        <div className="w-10 flex-shrink-0 text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 text-right select-none pt-2">
+                                            {/* Timestamp for grouped messages */}
+                                        </div>
+                                    )}
+
+                                    <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}>
+                                        {showHeader && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`text-sm font-medium cursor-pointer hover:underline ${isOwn ? "text-blue-600" : "text-gray-900"}`}>
+                                                    {displayName}
+                                                </span>
+                                                <span className="text-xs text-gray-400">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className={`break-words leading-relaxed ${isFile ? "" : `rounded-lg px-4 py-2 ${isOwn ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-100 text-gray-900 rounded-tl-none"}`}`}>
+                                            {isFile ? (
+                                                <FileMessage content={msg.content} type={msg.type} timestamp={msg.created_at} />
+                                            ) : (
+                                                msg.content
+                                            )}
+                                        </div>
+                                        {!isFile && !showHeader && (
+                                            <div className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <span className="text-xs text-gray-400 mt-1">
-                                    {new Date(msg.created_at).toLocaleTimeString()}
-                                </span>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                     <div ref={messagesEndRef} />
                 </div>
             </div>
-            <div className="p-4">
-                <div className="flex gap-2">
+
+            {/* Input Area */}
+            <div className="p-4 bg-gray-50 border-t relative">
+                {selectedFile && (
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-blue-50 rounded border border-blue-100 text-sm">
+                        <span className="font-medium text-blue-700 truncate max-w-xs">{selectedFile.name}</span>
+                        <button onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="p-1 hover:bg-blue-100 rounded-full">
+                            <X className="h-4 w-4 text-blue-500" />
+                        </button>
+                    </div>
+                )}
+
+                {showEmojiPicker && (
+                    <div className="absolute bottom-16 right-4 z-50 shadow-xl rounded-lg overflow-hidden border">
+                        <EmojiPicker onEmojiClick={onEmojiClick} width={300} height={400} />
+                    </div>
+                )}
+
+                <div className="flex items-center gap-2 bg-white p-2 rounded-lg border shadow-sm">
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                        title="Upload File"
+                    >
+                        <Paperclip className="h-5 w-5" />
+                    </button>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        onChange={handleFileSelect}
+                    />
+
                     <Input
-                        placeholder={`Message ${otherUser?.full_name || otherUser?.email?.split("@")[0] || ""}...`}
+                        placeholder={`Message @${otherUser?.full_name || otherUser?.email?.split("@")[0] || "User"}`}
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                        className="flex-1"
+                        className="flex-1 border-0 focus-visible:ring-0 px-2"
                     />
-                    <Button onClick={handleSend} disabled={!newMessage.trim()}>
-                        Send
+
+                    <button
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className={`p-2 rounded-full transition-colors ${showEmojiPicker ? "text-yellow-500 bg-yellow-50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"}`}
+                        title="Add Emoji"
+                    >
+                        <Smile className="h-5 w-5" />
+                    </button>
+
+                    <Button onClick={handleSend} disabled={(!newMessage.trim() && !selectedFile) || isUploading} className={`${isUploading ? "opacity-70" : ""}`}>
+                        {isUploading ? "Sending..." : "Send"}
                     </Button>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-2 text-center">
+                    Files up to 50MB allowed. Images and videos will preview automatically.
                 </div>
             </div>
         </div>
