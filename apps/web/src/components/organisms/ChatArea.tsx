@@ -5,8 +5,9 @@ import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { useChat } from "@/hooks/useChat";
 import { useChannelMembers } from "@/hooks/useChannelMembers";
+import { useServerSettings } from "@/hooks/useServerSettings";
 import { supabase } from "@/lib/supabase";
-import { Users } from "lucide-react";
+import { Users, AlertCircle } from "lucide-react";
 
 function MessageSkeleton() {
     return (
@@ -30,11 +31,13 @@ function MessageSkeleton() {
 
 export function ChatArea({ channelId }: { channelId: string }) {
     const { messages, loading, sendMessage } = useChat(channelId);
-    const { members, isMember, loading: membersLoading } = useChannelMembers(channelId);
+    const { members, isMember, loading: membersLoading, serverId } = useChannelMembers(channelId);
+    const { checkMessage } = useServerSettings(serverId);
     const [newMessage, setNewMessage] = useState("");
     const [userId, setUserId] = useState<string | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [showMembers, setShowMembers] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -50,6 +53,15 @@ export function ChatArea({ channelId }: { channelId: string }) {
 
     const handleSend = async () => {
         if (!newMessage.trim() || !userId) return;
+
+        setError(null);
+
+        const modResult = checkMessage(newMessage);
+        if (!modResult.allowed) {
+            setError(modResult.reason || "Message not allowed");
+            return;
+        }
+
         await sendMessage(newMessage, userId);
         setNewMessage("");
     };
@@ -126,12 +138,23 @@ export function ChatArea({ channelId }: { channelId: string }) {
                     <div ref={messagesEndRef} />
                 </div>
             </div>
+
+            {error && (
+                <div className="mx-4 mb-2 p-2 bg-red-50 border border-red-200 rounded flex items-center gap-2 text-red-700 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    {error}
+                </div>
+            )}
+
             <div className="p-4">
                 <div className="flex gap-2">
                     <Input
                         placeholder={isMember ? "Type a message..." : "Join server to send messages"}
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => {
+                            setNewMessage(e.target.value);
+                            setError(null);
+                        }}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
                         disabled={isLoading || !userId || !isMember}
                         className="flex-1"

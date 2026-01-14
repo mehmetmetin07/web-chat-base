@@ -77,6 +77,36 @@ CREATE POLICY "Owners can update servers"
   ON public.servers FOR UPDATE TO authenticated USING (auth.uid() = owner_id);
 
 -- =====================
+-- 2.1 SERVER BANS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.server_bans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  banned_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(server_id, user_id)
+);
+
+ALTER TABLE public.server_bans ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Server admins can view bans" ON public.server_bans;
+CREATE POLICY "Server admins can view bans"
+  ON public.server_bans FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server admins can ban" ON public.server_bans;
+CREATE POLICY "Server admins can ban"
+  ON public.server_bans FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Server admins can unban" ON public.server_bans;
+CREATE POLICY "Server admins can unban"
+  ON public.server_bans FOR DELETE TO authenticated USING (true);
+
+-- Add description to servers for rules
+ALTER TABLE public.servers ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- =====================
 -- 3. SERVER MEMBERS TABLE
 -- =====================
 CREATE TABLE IF NOT EXISTS public.server_members (
@@ -216,3 +246,93 @@ CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON public.server_members
 CREATE INDEX IF NOT EXISTS idx_groups_server_id ON public.groups(server_id);
 CREATE INDEX IF NOT EXISTS idx_messages_group_id ON public.messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON public.messages(sender_id);
+
+-- =====================
+-- 7. SERVER SETTINGS (Auto-Moderation)
+-- =====================
+CREATE TABLE IF NOT EXISTS public.server_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID UNIQUE REFERENCES public.servers(id) ON DELETE CASCADE,
+  banned_words TEXT[] DEFAULT '{}',
+  allowed_file_types TEXT[] DEFAULT ARRAY['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt'],
+  spam_threshold INT DEFAULT 5,
+  spam_window_seconds INT DEFAULT 10,
+  spam_action TEXT DEFAULT 'warn' CHECK (spam_action IN ('warn', 'mute', 'kick', 'ban')),
+  link_filter BOOLEAN DEFAULT false,
+  invite_filter BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.server_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Server members can view settings" ON public.server_settings;
+CREATE POLICY "Server members can view settings"
+  ON public.server_settings FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server owners can update settings" ON public.server_settings;
+CREATE POLICY "Server owners can update settings"
+  ON public.server_settings FOR UPDATE TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Server owners can insert settings" ON public.server_settings;
+CREATE POLICY "Server owners can insert settings"
+  ON public.server_settings FOR INSERT TO authenticated
+  WITH CHECK (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+  );
+
+-- Trigger to create default settings when server is created
+CREATE OR REPLACE FUNCTION public.handle_new_server_settings()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.server_settings (server_id)
+  VALUES (NEW.id)
+  ON CONFLICT (server_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_server_created_settings ON public.servers;
+CREATE TRIGGER on_server_created_settings
+  AFTER INSERT ON public.servers
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_server_settings();
+
+-- Sync existing servers
+INSERT INTO public.server_settings (server_id)
+SELECT id FROM public.servers
+ON CONFLICT (server_id) DO NOTHING;
+
+-- =====================
+-- 8. CHANNEL PERMISSIONS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.channel_permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'moderator', 'member')),
+  can_send BOOLEAN DEFAULT true,
+  can_attach BOOLEAN DEFAULT true,
+  can_mention BOOLEAN DEFAULT true,
+  slowmode_seconds INT DEFAULT 0,
+  UNIQUE(channel_id, role)
+);
+
+ALTER TABLE public.channel_permissions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view channel permissions" ON public.channel_permissions;
+CREATE POLICY "Anyone can view channel permissions"
+  ON public.channel_permissions FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server owners can manage permissions" ON public.channel_permissions;
+CREATE POLICY "Server owners can manage permissions"
+  ON public.channel_permissions FOR ALL TO authenticated
+  USING (
+    channel_id IN (
+      SELECT g.id FROM public.groups g
+      JOIN public.servers s ON s.id = g.server_id
+      WHERE s.owner_id = auth.uid()
+    )
+  );
+

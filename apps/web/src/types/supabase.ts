@@ -45,6 +45,7 @@ export interface Database {
                     owner_id: string;
                     invite_code: string;
                     image_url: string | null;
+                    description: string | null;
                     created_at: string;
                 };
                 Insert: {
@@ -53,6 +54,7 @@ export interface Database {
                     owner_id: string;
                     invite_code?: string;
                     image_url?: string | null;
+                    description?: string | null;
                     created_at?: string;
                 };
                 Update: {
@@ -61,6 +63,7 @@ export interface Database {
                     owner_id?: string;
                     invite_code?: string;
                     image_url?: string | null;
+                    description?: string | null;
                     created_at?: string;
                 };
             };
