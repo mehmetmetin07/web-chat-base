@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServers } from "@/hooks/useServers";
@@ -13,6 +14,7 @@ interface ServerListProps {
 }
 
 export function ServerList({ selectedServerId, onSelectServer }: ServerListProps) {
+    const router = useRouter();
     const { servers, loading, createServer, joinServer } = useServers();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showJoinModal, setShowJoinModal] = useState(false);
@@ -21,6 +23,7 @@ export function ServerList({ selectedServerId, onSelectServer }: ServerListProps
         const server = await createServer(name);
         if (server) {
             onSelectServer(server.id);
+            router.push(`/servers/${server.id}`);
         }
     };
 
@@ -28,6 +31,7 @@ export function ServerList({ selectedServerId, onSelectServer }: ServerListProps
         const server = await joinServer(code);
         if (server) {
             onSelectServer(server.id);
+            router.push(`/servers/${server.id}`);
             return true;
         }
         return false;

@@ -11,6 +11,8 @@ import { useFileUpload } from "@/hooks/useFileUpload";
 import { supabase } from "@/lib/supabase";
 import { Users, AlertCircle, Smile, X, Paperclip, File, Image, Download, Loader2 } from "lucide-react";
 import { FileMessage } from "@/components/molecules/FileMessage";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
+import { TypingIndicator } from "@/components/molecules/TypingIndicator";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -67,6 +69,10 @@ export function ChatArea({ channelId }: { channelId: string }) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const currentMember = members.find((m) => m.id === userId);
+    const currentUsername = currentMember?.full_name || currentMember?.email?.split("@")[0] || "Unknown";
+    const { typingUsers, sendTyping } = useTypingIndicator(channelId, userId, currentUsername);
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
@@ -276,6 +282,9 @@ export function ChatArea({ channelId }: { channelId: string }) {
                 accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp4,.mp3"
             />
 
+            <div className="px-4">
+                <TypingIndicator typingUsers={typingUsers} />
+            </div>
             <div className="p-4 border-t">
                 <div className="flex gap-2">
                     <button
@@ -298,6 +307,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
                         onChange={(e) => {
                             setNewMessage(e.target.value);
                             setError(null);
+                            sendTyping();
                         }}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
                         disabled={isLoading || !userId || !isMember}

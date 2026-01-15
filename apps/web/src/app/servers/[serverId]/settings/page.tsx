@@ -5,10 +5,19 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { RoleManagement } from "@/components/organisms/RoleManagement";
+import { ModerationLogsPanel } from "@/components/organisms/ModerationLogsPanel";
 import { supabase } from "@/lib/supabase";
 import { useServerPermissions } from "@/hooks/useServerPermissions";
-import { ArrowLeft, Crown, Shield, User, UserX, Ban, Undo2, AlertTriangle, FileType, MessageSquare, Search, MoreVertical, Check } from "lucide-react";
+import { ArrowLeft, Crown, Shield, User, UserX, Ban, Undo2, AlertTriangle, FileType, MessageSquare, Search, MoreVertical, Check, VolumeX, Clock } from "lucide-react";
 import { Database } from "@/types/supabase";
+
+type MutedUser = {
+    id: string;
+    user_id: string;
+    reason: string | null;
+    expires_at: string | null;
+    users: Database["public"]["Tables"]["users"]["Row"];
+};
 
 type ServerMember = {
     id: string;
@@ -62,6 +71,7 @@ export default function ServerSettingsPage({
     const [server, setServer] = useState<any>(null);
     const [members, setMembers] = useState<ServerMember[]>([]);
     const [bannedUsers, setBannedUsers] = useState<BannedUser[]>([]);
+    const [mutedUsers, setMutedUsers] = useState<MutedUser[]>([]);
     const [settings, setSettings] = useState<ServerSettings | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const { can, loading: permsLoading, isOwner } = useServerPermissions(serverId);
@@ -70,7 +80,7 @@ export default function ServerSettingsPage({
     const [bannedWordsText, setBannedWordsText] = useState("");
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<"general" | "roles" | "members" | "bans" | "automod">("general");
+    const [activeTab, setActiveTab] = useState<"general" | "roles" | "members" | "bans" | "automod" | "logs">("general");
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -109,6 +119,15 @@ export default function ServerSettingsPage({
 
             if (bansData) {
                 setBannedUsers(bansData as any);
+            }
+
+            const { data: mutesData } = await supabase
+                .from("server_mutes")
+                .select("*, users(*)")
+                .eq("server_id", serverId);
+
+            if (mutesData) {
+                setMutedUsers(mutesData as any);
             }
 
             const { data: settingsData } = await supabase
@@ -211,9 +230,8 @@ export default function ServerSettingsPage({
         const member = members.find((m) => m.id === memberId);
         if (!member) return;
 
-        await supabase.from("server_members").delete().eq("id", memberId);
-
-        const { data } = await supabase
+        // First insert the ban record
+        const { data: banData, error: banError } = await supabase
             .from("server_bans")
             .insert({
                 server_id: serverId,
@@ -224,9 +242,79 @@ export default function ServerSettingsPage({
             .select("*, users(*)")
             .single();
 
-        if (data) {
+        if (banError) {
+            console.error("Ban error:", banError);
+            setMessage({ type: "error", text: "Failed to ban user: " + banError.message });
+            return;
+        }
+
+        // The trigger should auto-remove from server_members, but we update UI
+        if (banData) {
             setMembers((prev) => prev.filter((m) => m.id !== memberId));
-            setBannedUsers((prev) => [...prev, data as any]);
+            setBannedUsers((prev) => [...prev, banData as any]);
+            setMessage({ type: "success", text: "User banned successfully" });
+        }
+
+        // Log moderation action
+        await supabase.from("moderation_logs").insert({
+            server_id: serverId,
+            moderator_id: currentUserId,
+            target_user_id: userId,
+            action: "ban",
+            reason: reason || null,
+        });
+    };
+
+    const handleMute = async (userId: string, durationMinutes: number, reason: string = "") => {
+        if ((!can("MODERATE_MEMBERS") && !can("ADMINISTRATOR") && !isOwner) || userId === currentUserId) return;
+
+        const expiresAt = durationMinutes > 0
+            ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString()
+            : null;
+
+        const { data, error } = await supabase
+            .from("server_mutes")
+            .insert({
+                server_id: serverId,
+                user_id: userId,
+                muted_by: currentUserId,
+                reason: reason || null,
+                expires_at: expiresAt,
+            })
+            .select("*, users(*)")
+            .single();
+
+        if (!error && data) {
+            setMutedUsers((prev) => [...prev, data as any]);
+            setMessage({ type: "success", text: `User muted${durationMinutes > 0 ? ` for ${durationMinutes} minutes` : " indefinitely"}` });
+
+            // Log moderation action
+            await supabase.from("moderation_logs").insert({
+                server_id: serverId,
+                moderator_id: currentUserId,
+                target_user_id: userId,
+                action: "mute",
+                reason: reason || null,
+                duration_minutes: durationMinutes || null,
+            });
+        }
+    };
+
+    const handleUnmute = async (muteId: string, userId: string) => {
+        if (!can("MODERATE_MEMBERS") && !can("ADMINISTRATOR") && !isOwner) return;
+
+        const { error } = await supabase.from("server_mutes").delete().eq("id", muteId);
+
+        if (!error) {
+            setMutedUsers((prev) => prev.filter((m) => m.id !== muteId));
+
+            // Log moderation action
+            await supabase.from("moderation_logs").insert({
+                server_id: serverId,
+                moderator_id: currentUserId,
+                target_user_id: userId,
+                action: "unmute",
+            });
         }
     };
 
@@ -327,6 +415,12 @@ export default function ServerSettingsPage({
                         className={`px-4 py-2 rounded ${activeTab === "bans" ? "bg-blue-600 text-white" : "bg-white border"}`}
                     >
                         Bans ({bannedUsers.length})
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("logs")}
+                        className={`px-4 py-2 rounded ${activeTab === "logs" ? "bg-blue-600 text-white" : "bg-white border"}`}
+                    >
+                        Logs
                     </button>
                 </div>
 
@@ -568,6 +662,20 @@ export default function ServerSettingsPage({
                                                         Kick Member
                                                     </button>
                                                     <button
+                                                        onClick={() => handleMute(member.user_id, 10)}
+                                                        className="w-full text-left px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 flex items-center gap-2"
+                                                    >
+                                                        <VolumeX className="h-4 w-4" />
+                                                        Mute (10 min)
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleMute(member.user_id, 60)}
+                                                        className="w-full text-left px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 flex items-center gap-2"
+                                                    >
+                                                        <Clock className="h-4 w-4" />
+                                                        Timeout (1 hour)
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleBan(member.id, member.user_id)}
                                                         className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                                     >
@@ -615,6 +723,13 @@ export default function ServerSettingsPage({
                                 ))}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === "logs" && (
+                    <div className="bg-white rounded-lg shadow-sm border p-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Moderation Logs</h2>
+                        <ModerationLogsPanel serverId={serverId} />
                     </div>
                 )}
             </div>

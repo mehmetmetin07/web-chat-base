@@ -11,6 +11,7 @@ import { CreateChannelModal } from "@/components/molecules/CreateChannelModal";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 import { useServerPermissions } from "@/hooks/useServerPermissions";
+import { usePresence } from "@/hooks/usePresence";
 
 type Server = Database["public"]["Tables"]["servers"]["Row"];
 
@@ -24,12 +25,13 @@ export function Sidebar({ className, server }: SidebarProps) {
     const activeServerId = server?.id ?? null; // Added activeServerId for clarity and consistency
     const { channels, loading: channelsLoading, createChannel } = useServerChannels(activeServerId);
     const { users, members, loading: usersLoading, currentUserProfile } = useUsers(activeServerId);
-    const { can, isOwner } = useServerPermissions(activeServerId || ""); // Added useServerPermissions
-    const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false); // Renamed and initialized
+    const { can, isOwner } = useServerPermissions(activeServerId || "");
+    const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
+    const onlineUsers = usePresence(userId);
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
@@ -233,7 +235,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                                                             </div>
                                                         )}
                                                         {/* Online indicator */}
-                                                        <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-gray-300 border-2 border-white group-hover:border-gray-100"></div>
+                                                        <div className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white group-hover:border-gray-100 ${onlineUsers.has(member.id) ? 'bg-green-500' : 'bg-gray-400'}`}></div>
                                                     </div>
                                                     <span
                                                         className="truncate text-sm font-medium transition-colors"

@@ -8,6 +8,8 @@ import { Smile, Paperclip, X } from "lucide-react";
 import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { FileMessage } from "../molecules/FileMessage";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
+import { TypingIndicator } from "@/components/molecules/TypingIndicator";
 
 type User = Database["public"]["Tables"]["users"]["Row"];
 
@@ -41,6 +43,25 @@ export function DMChatArea({ userId }: { userId: string }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { uploadFile, uploading: isUploading } = useFileUpload(null); // Pass null for DM
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+    useEffect(() => {
+        if (currentUserId) {
+            supabase
+                .from("users")
+                .select("*")
+                .eq("id", currentUserId)
+                .single()
+                .then(({ data }) => setCurrentUser(data));
+        }
+    }, [currentUserId]);
+
+    const currentUsername = currentUser?.full_name || currentUser?.email?.split("@")[0] || "Unknown";
+    const dmChannelId = currentUserId && userId
+        ? `dm_${[currentUserId, userId].sort().join('_')}`
+        : null;
+
+    const { typingUsers, sendTyping } = useTypingIndicator(dmChannelId, currentUserId, currentUsername);
 
     useEffect(() => {
         if (userId) {
@@ -188,6 +209,9 @@ export function DMChatArea({ userId }: { userId: string }) {
 
             {/* Input Area */}
             <div className="p-4 bg-gray-50 border-t relative">
+                <div className="absolute top-0 left-0 w-full -translate-y-full px-4 pb-2 pointer-events-none">
+                    <TypingIndicator typingUsers={typingUsers} />
+                </div>
                 {selectedFile && (
                     <div className="flex items-center gap-2 mb-2 p-2 bg-blue-50 rounded border border-blue-100 text-sm">
                         <span className="font-medium text-blue-700 truncate max-w-xs">{selectedFile.name}</span>
@@ -221,7 +245,10 @@ export function DMChatArea({ userId }: { userId: string }) {
                     <Input
                         placeholder={`Message @${otherUser?.full_name || otherUser?.email?.split("@")[0] || "User"}`}
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => {
+                            setNewMessage(e.target.value);
+                            sendTyping();
+                        }}
                         onKeyDown={(e) => e.key === "Enter" && handleSend()}
                         className="flex-1 border-0 focus-visible:ring-0 px-2"
                     />
