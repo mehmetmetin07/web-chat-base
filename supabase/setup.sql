@@ -97,11 +97,53 @@ CREATE POLICY "Server admins can view bans"
 
 DROP POLICY IF EXISTS "Server admins can ban" ON public.server_bans;
 CREATE POLICY "Server admins can ban"
-  ON public.server_bans FOR INSERT TO authenticated WITH CHECK (true);
+  ON public.server_bans FOR INSERT TO authenticated 
+  WITH CHECK (
+    -- Server owner can always ban
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    -- Or admins with ban permission
+    OR server_id IN (
+      SELECT sm.server_id FROM public.server_members sm
+      WHERE sm.user_id = auth.uid() AND sm.role IN ('owner', 'admin')
+    )
+    -- Or via role system
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_bans.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'BAN_MEMBERS' = 'true')
+    )
+  );
 
 DROP POLICY IF EXISTS "Server admins can unban" ON public.server_bans;
 CREATE POLICY "Server admins can unban"
-  ON public.server_bans FOR DELETE TO authenticated USING (true);
+  ON public.server_bans FOR DELETE TO authenticated 
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_bans.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'BAN_MEMBERS' = 'true')
+    )
+  );
+
+-- Trigger to auto-remove member when banned
+CREATE OR REPLACE FUNCTION public.handle_ban_remove_member()
+RETURNS TRIGGER AS $$
+BEGIN
+  DELETE FROM public.server_members 
+  WHERE server_id = NEW.server_id AND user_id = NEW.user_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_ban_remove_member ON public.server_bans;
+CREATE TRIGGER on_ban_remove_member
+  AFTER INSERT ON public.server_bans
+  FOR EACH ROW EXECUTE FUNCTION public.handle_ban_remove_member();
 
 -- Add description to servers for rules
 ALTER TABLE public.servers ADD COLUMN IF NOT EXISTS description TEXT;
@@ -126,11 +168,54 @@ CREATE POLICY "Anyone can view server members"
 
 DROP POLICY IF EXISTS "Users can insert own membership" ON public.server_members;
 CREATE POLICY "Users can insert own membership"
-  ON public.server_members FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+  ON public.server_members FOR INSERT TO authenticated 
+  WITH CHECK (
+    auth.uid() = user_id
+    AND NOT EXISTS (
+      SELECT 1 FROM public.server_bans 
+      WHERE server_bans.server_id = server_members.server_id 
+        AND server_bans.user_id = auth.uid()
+    )
+  );
 
 DROP POLICY IF EXISTS "Users can delete own membership" ON public.server_members;
 CREATE POLICY "Users can delete own membership"
   ON public.server_members FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Admins can kick members" ON public.server_members;
+CREATE POLICY "Admins can kick members"
+  ON public.server_members FOR DELETE TO authenticated 
+  USING (
+    -- Server owner can kick anyone
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    -- Or legacy role check
+    OR server_id IN (
+      SELECT sm.server_id FROM public.server_members sm
+      WHERE sm.user_id = auth.uid() AND sm.role IN ('owner', 'admin')
+    )
+    -- Or via new role system
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_members.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'KICK_MEMBERS' = 'true')
+    )
+  );
+
+DROP POLICY IF EXISTS "Admins can update member roles" ON public.server_members;
+CREATE POLICY "Admins can update member roles"
+  ON public.server_members FOR UPDATE TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_members.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_ROLES' = 'true')
+    )
+  );
 
 -- Trigger to add owner as member
 CREATE OR REPLACE FUNCTION public.handle_new_server()
@@ -458,7 +543,114 @@ CREATE TRIGGER on_server_created_roles
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_server_roles();
 
 -- =====================
--- 11. REALTIME CONFIGURATION
+-- 11. MODERATION SYSTEM
+-- =====================
+
+-- Moderation action logs
+CREATE TABLE IF NOT EXISTS public.moderation_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  moderator_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  target_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL CHECK (action IN ('kick', 'ban', 'unban', 'mute', 'unmute', 'warn', 'timeout')),
+  reason TEXT,
+  duration_minutes INT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.moderation_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Server members can view moderation logs" ON public.moderation_logs;
+CREATE POLICY "Server members can view moderation logs"
+  ON public.moderation_logs FOR SELECT TO authenticated
+  USING (
+    server_id IN (SELECT server_id FROM public.server_members WHERE user_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Admins can create moderation logs" ON public.moderation_logs;
+CREATE POLICY "Admins can create moderation logs"
+  ON public.moderation_logs FOR INSERT TO authenticated
+  WITH CHECK (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = moderation_logs.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' 
+             OR sr.permissions->>'KICK_MEMBERS' = 'true'
+             OR sr.permissions->>'BAN_MEMBERS' = 'true'
+             OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
+    )
+  );
+
+-- Server mutes (temporary silencing)
+CREATE TABLE IF NOT EXISTS public.server_mutes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  muted_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  reason TEXT,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(server_id, user_id)
+);
+
+ALTER TABLE public.server_mutes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view mutes" ON public.server_mutes;
+CREATE POLICY "Anyone can view mutes"
+  ON public.server_mutes FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Admins can mute members" ON public.server_mutes;
+CREATE POLICY "Admins can mute members"
+  ON public.server_mutes FOR INSERT TO authenticated
+  WITH CHECK (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_mutes.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
+    )
+  );
+
+DROP POLICY IF EXISTS "Admins can unmute members" ON public.server_mutes;
+CREATE POLICY "Admins can unmute members"
+  ON public.server_mutes FOR DELETE TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = server_mutes.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
+    )
+  );
+
+-- Function to check if user is muted
+CREATE OR REPLACE FUNCTION public.is_user_muted(p_server_id UUID, p_user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.server_mutes
+    WHERE server_id = p_server_id 
+      AND user_id = p_user_id
+      AND (expires_at IS NULL OR expires_at > NOW())
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Indexes for moderation tables
+CREATE INDEX IF NOT EXISTS idx_moderation_logs_server ON public.moderation_logs(server_id);
+CREATE INDEX IF NOT EXISTS idx_moderation_logs_target ON public.moderation_logs(target_user_id);
+CREATE INDEX IF NOT EXISTS idx_server_mutes_server ON public.server_mutes(server_id);
+CREATE INDEX IF NOT EXISTS idx_server_mutes_user ON public.server_mutes(user_id);
+
+-- =====================
+-- 12. REALTIME CONFIGURATION
 -- =====================
 -- Enable Realtime for tables
 BEGIN;
