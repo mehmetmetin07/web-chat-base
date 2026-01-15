@@ -13,6 +13,7 @@ export function useTypingIndicator(channelId: string | null, currentUserId: stri
     const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
     const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastSentRef = useRef<number>(0);
 
     useEffect(() => {
         if (!channelId || !currentUserId) return;
@@ -22,7 +23,6 @@ export function useTypingIndicator(channelId: string | null, currentUserId: stri
 
         channel
             .on("broadcast", { event: "typing" }, ({ payload }) => {
-                console.log("[Typing] Received typing event:", payload);
                 if (payload.userId === currentUserId) return;
 
                 setTypingUsers((prev) => {
@@ -38,12 +38,9 @@ export function useTypingIndicator(channelId: string | null, currentUserId: stri
                 });
             })
             .on("broadcast", { event: "stop_typing" }, ({ payload }) => {
-                console.log("[Typing] Received stop_typing event:", payload);
                 setTypingUsers((prev) => prev.filter((u) => u.userId !== payload.userId));
             })
-            .subscribe((status) => {
-                console.log(`[Typing] Subscription status for channel typing_${channelId}:`, status);
-            });
+            .subscribe();
 
         // Clean up stale typing indicators every 3 seconds
         const cleanupInterval = setInterval(() => {
@@ -58,18 +55,18 @@ export function useTypingIndicator(channelId: string | null, currentUserId: stri
     }, [channelId, currentUserId]);
 
     const sendTyping = useCallback(async () => {
-        if (!channelRef.current || !currentUserId) {
-            console.warn("[Typing] Cannot send typing: channel or userId missing", { channel: !!channelRef.current, userId: currentUserId });
-            return;
+        if (!channelRef.current || !currentUserId) return;
+
+        const now = Date.now();
+        // Throttle: only send "typing" event every 2 seconds
+        if (now - lastSentRef.current > 2000) {
+            lastSentRef.current = now;
+            await channelRef.current.send({
+                type: "broadcast",
+                event: "typing",
+                payload: { userId: currentUserId, username: currentUsername },
+            });
         }
-
-        const result = await channelRef.current.send({
-            type: "broadcast",
-            event: "typing",
-            payload: { userId: currentUserId, username: currentUsername },
-        });
-
-        console.log("[Typing] Sent typing event", result);
 
         // Clear previous timeout and set new one
         if (typingTimeoutRef.current) {
