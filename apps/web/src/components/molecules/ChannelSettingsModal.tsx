@@ -5,6 +5,7 @@ import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { X, Hash, Shield, Clock, Check, Loader2, Eye, MessageSquare, Paperclip, Link2, Smile, AtSign, Users, Trash2, Pin, UserPlus } from "lucide-react";
 import { useChannelPermissions, PermissionField } from "@/hooks/useChannelPermissions";
+import { useChannelCategories } from "@/hooks/useChannelCategories";
 import { supabase } from "@/lib/supabase";
 
 interface ChannelSettingsModalProps {
@@ -70,7 +71,9 @@ const PERMISSION_CATEGORIES: { title: string; permissions: PermissionConfig[] }[
 
 export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, serverId }: ChannelSettingsModalProps) {
     const { roles, loading, updatePermission, getPermissionForRole } = useChannelPermissions(channelId, serverId);
+    const { categories } = useChannelCategories(serverId);
     const [name, setName] = useState(channelName);
+    const [categoryId, setCategoryId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"general" | "permissions">("general");
     const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -78,7 +81,12 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
 
     useEffect(() => {
         setName(channelName);
-    }, [channelName]);
+        // Fetch current category
+        supabase.from("groups").select("category_id").eq("id", channelId).single()
+            .then(({ data }) => {
+                if (data) setCategoryId(data.category_id);
+            });
+    }, [channelName, channelId]);
 
     useEffect(() => {
         if (roles.length > 0 && !selectedRoleId) {
@@ -89,9 +97,14 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
     if (!isOpen) return null;
 
     const handleSaveName = async () => {
-        if (name.trim() === channelName) return;
         setSaving(true);
-        await supabase.from("groups").update({ name: name.trim() }).eq("id", channelId);
+        // Update both name and category
+        await supabase.from("groups")
+            .update({
+                name: name.trim(),
+                category_id: categoryId
+            })
+            .eq("id", channelId);
         setSaving(false);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
@@ -155,6 +168,27 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
                                         className="flex-1"
                                     />
                                     <Button onClick={handleSaveName} disabled={saving || name.trim() === channelName}>
+                                        {saved ? <Check className="h-4 w-4" /> : saving ? "Saving..." : "Save"}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        value={categoryId || ""}
+                                        onChange={(e) => setCategoryId(e.target.value || null)}
+                                        className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">No Category</option>
+                                        {categories.map((category) => (
+                                            <option key={category.id} value={category.id}>
+                                                {category.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Button onClick={handleSaveName} disabled={saving}>
                                         {saved ? <Check className="h-4 w-4" /> : saving ? "Saving..." : "Save"}
                                     </Button>
                                 </div>

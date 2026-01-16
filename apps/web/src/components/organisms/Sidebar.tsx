@@ -1,20 +1,63 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Hash, Plus, LogOut, Copy, Check, Users, Link as LinkIcon, Settings } from "lucide-react";
+import { Hash, Plus, LogOut, Copy, Check, Users, Link as LinkIcon, Settings, ChevronDown, ChevronRight, FolderPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServerChannels } from "@/hooks/useServerChannels";
 import { useUsers } from "@/hooks/useUsers";
+import { useChannelCategories } from "@/hooks/useChannelCategories";
 import { CreateChannelModal } from "@/components/molecules/CreateChannelModal";
+import { CreateCategoryModal } from "@/components/molecules/CreateCategoryModal";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 import { useServerPermissions } from "@/hooks/useServerPermissions";
 import { usePresence } from "@/hooks/usePresence";
 import { ChannelSettingsModal } from "@/components/molecules/ChannelSettingsModal";
+import {
+    DndContext,
+    DragOverlay,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragStartEvent,
+} from "@dnd-kit/core";
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { SidebarChannel } from "@/components/molecules/SidebarChannel";
+import { SidebarCategory } from "@/components/molecules/SidebarCategory";
 
 type Server = Database["public"]["Tables"]["servers"]["Row"];
+
+// Manual type definition since types are not regenerated yet
+type Channel = {
+    id: string;
+    server_id: string;
+    name: string;
+    category_id: string | null;
+    created_at: string;
+    description: string | null;
+    owner_id: string;
+    image_url: string | null;
+};
+
+// Manual type definition since types are not regenerated yet
+type Category = {
+    id: string;
+    server_id: string | null;
+    name: string;
+    position: number;
+    is_collapsed: boolean;
+    created_at: string;
+};
 
 interface SidebarProps {
     className?: string;
@@ -23,9 +66,10 @@ interface SidebarProps {
 
 export function Sidebar({ className, server }: SidebarProps) {
     const pathname = usePathname();
-    const activeServerId = server?.id ?? null; // Added activeServerId for clarity and consistency
-    const { channels, loading: channelsLoading, createChannel } = useServerChannels(activeServerId);
+    const activeServerId = server?.id ?? null;
+    const { channels, loading: channelsLoading, createChannel, updateChannel } = useServerChannels(activeServerId);
     const { users, members, loading: usersLoading, currentUserProfile } = useUsers(activeServerId);
+    const { categories, createCategory, toggleCollapsed } = useChannelCategories(activeServerId);
     const { can, isOwner } = useServerPermissions(activeServerId || "");
     const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
@@ -35,6 +79,107 @@ export function Sidebar({ className, server }: SidebarProps) {
     const onlineUsers = usePresence(userId);
     const [channelSettingsId, setChannelSettingsId] = useState<string | null>(null);
     const [channelSettingsName, setChannelSettingsName] = useState<string>("");
+    const [isCreateCategoryOpen, setIsCreateCategoryOpen] = useState(false);
+
+    // DnD State
+    const [activeDragItem, setActiveDragItem] = useState<{ id: string; type: "Channel" | "Category"; data: any } | null>(null);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const sortedCategories = useMemo(() =>
+        [...categories].sort((a, b) => (a.position || 0) - (b.position || 0)),
+        [categories]
+    );
+
+    // Group channels
+    const channelsByCategory = useMemo(() => {
+        const groups: Record<string, Channel[]> = {};
+        const uncategorized: Channel[] = [];
+
+        channels.forEach(channel => {
+            // Manual cast since types are mismatching
+            const c = channel as unknown as Channel;
+            if (c.category_id) {
+                if (!groups[c.category_id]) groups[c.category_id] = [];
+                groups[c.category_id].push(c);
+            } else {
+                uncategorized.push(c);
+            }
+        });
+
+        return { groups, uncategorized };
+    }, [channels]);
+
+    const handleDragStart = (event: DragStartEvent) => {
+        const { active } = event;
+        const type = active.data.current?.type;
+        const data = active.data.current?.channel || active.data.current?.category;
+
+        if (type && data) {
+            setActiveDragItem({ id: active.id as string, type, data });
+        }
+    };
+
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+        setActiveDragItem(null);
+
+        if (!over) return;
+        if (active.id === over.id) return;
+
+        const activeType = active.data.current?.type;
+        const overType = over.data.current?.type;
+        const activeItem = active.data.current?.channel || active.data.current?.category;
+
+        if (!can("MANAGE_CHANNELS") && !isOwner && !can("ADMINISTRATOR")) return;
+
+        // Moving Category
+        if (activeType === "Category" && overType === "Category") {
+            const oldIndex = sortedCategories.findIndex((c) => c.id === active.id);
+            const newIndex = sortedCategories.findIndex((c) => c.id === over.id);
+
+            const newCategories = arrayMove(sortedCategories, oldIndex, newIndex);
+
+            // Optimistic blocking
+            await Promise.all(newCategories.map((cat, index) =>
+                supabase.from("channel_categories").update({ position: index }).eq("id", cat.id)
+            ));
+        }
+
+        // Moving Channel
+        if (activeType === "Channel") {
+            // Channel dropped over another Channel
+            if (overType === "Channel") {
+                const overChannel = over.data.current?.channel;
+                if (overChannel) {
+                    const targetCategoryId = overChannel.category_id;
+
+                    if (activeItem.category_id !== targetCategoryId) {
+                        await updateChannel(active.id as string, { category_id: targetCategoryId });
+                    }
+                }
+            }
+
+            // Channel dropped over a Category (move to that category)
+            if (overType === "Category") {
+                const targetCategoryId = over.id as string;
+                if (activeItem.category_id !== targetCategoryId) {
+                    await updateChannel(active.id as string, { category_id: targetCategoryId });
+                }
+            }
+        }
+    };
+
+    const canManage = isOwner || can("ADMINISTRATOR") || can("MANAGE_CHANNELS");
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
@@ -130,50 +275,123 @@ export function Sidebar({ className, server }: SidebarProps) {
                 )}
 
                 <div className="flex-1 overflow-auto py-2">
-                    <nav className="px-2 text-sm font-medium">
-                        <div className="flex items-center justify-between px-2 mb-1">
-                            <span className="text-xs font-semibold uppercase text-gray-500">
-                                Text Channels
-                            </span>
-                            <button
-                                onClick={() => setIsCreateChannelOpen(true)}
-                                className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                                disabled={!userId}
-                            >
-                                <Plus className="h-4 w-4" />
-                            </button>
-                        </div>
-                        {channelsLoading ? (
-                            <div className="px-2 py-2 text-xs text-gray-400">Loading...</div>
-                        ) : channels.length === 0 ? (
-                            <div className="px-2 py-2 text-xs text-gray-400">No channels yet</div>
-                        ) : (
-                            channels.map((channel) => (
-                                <div key={channel.id} className="group flex items-center justify-between pr-1">
-                                    <Link
-                                        href={`/servers/${server.id}/channels/${channel.id}`}
-                                        className={cn(
-                                            "flex-1 flex items-center gap-2 rounded px-2 py-1.5 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-900",
-                                            pathname.includes(channel.id) && "bg-gray-300 text-gray-900"
-                                        )}
-                                    >
-                                        <Hash className="h-4 w-4 text-gray-500" />
-                                        {channel.name}
-                                    </Link>
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                    >
+                        <nav className="px-2 text-sm font-medium">
+                            <div className="flex items-center justify-between px-2 mb-1">
+                                <span className="text-xs font-semibold uppercase text-gray-500">
+                                    Channels
+                                </span>
+                                <div className="flex items-center gap-1">
                                     {(isOwner || can("ADMINISTRATOR") || can("MANAGE_CHANNELS")) && (
                                         <button
-                                            onClick={() => {
-                                                setChannelSettingsId(channel.id);
-                                                setChannelSettingsName(channel.name);
-                                            }}
-                                            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={() => setIsCreateCategoryOpen(true)}
+                                            className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                                            title="Create Category"
                                         >
-                                            <Settings className="h-3.5 w-3.5" />
+                                            <FolderPlus className="h-4 w-4" />
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => setIsCreateChannelOpen(true)}
+                                        className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                                        disabled={!userId}
+                                        title="Create Channel"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </button>
                                 </div>
-                            ))
-                        )}
+                            </div>
+                            {channelsLoading ? (
+                                <div className="px-2 py-2 text-xs text-gray-400">Loading...</div>
+                            ) : (
+                                <>
+                                    <div className="space-y-1">
+                                        <SortableContext
+                                            items={sortedCategories.map(c => c.id)}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            {sortedCategories.map((category) => (
+                                                <SidebarCategory
+                                                    key={category.id}
+                                                    category={category}
+                                                    isCollapsed={!!category.is_collapsed}
+                                                    onToggle={toggleCollapsed}
+                                                >
+                                                    <div className="mt-0.5 ml-2 border-l pl-2 border-gray-200 min-h-[2px]">
+                                                        <SortableContext
+                                                            items={channelsByCategory.groups[category.id]?.map(c => c.id) || []}
+                                                            strategy={verticalListSortingStrategy}
+                                                        >
+                                                            {channelsByCategory.groups[category.id]?.map((channel) => (
+                                                                <SidebarChannel
+                                                                    key={channel.id}
+                                                                    channel={channel}
+                                                                    isActive={pathname.includes(channel.id)}
+                                                                    serverId={server?.id || ""}
+                                                                    canManage={canManage}
+                                                                    onOpenSettings={(id, name) => {
+                                                                        setChannelSettingsId(id);
+                                                                        setChannelSettingsName(name);
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </SortableContext>
+                                                    </div>
+                                                </SidebarCategory>
+                                            ))}
+                                        </SortableContext>
+
+                                        {/* Uncategorized Channels */}
+                                        {channelsByCategory.uncategorized.length > 0 && (
+                                            <div className="mt-4">
+                                                <div className="px-2 mb-1 text-xs font-semibold uppercase text-gray-400">Uncategorized</div>
+                                                <SortableContext
+                                                    items={channelsByCategory.uncategorized.map(c => c.id)}
+                                                    strategy={verticalListSortingStrategy}
+                                                >
+                                                    {channelsByCategory.uncategorized.map((channel) => (
+                                                        <SidebarChannel
+                                                            key={channel.id}
+                                                            channel={channel}
+                                                            isActive={pathname.includes(channel.id)}
+                                                            serverId={server?.id || ""}
+                                                            canManage={canManage}
+                                                            onOpenSettings={(id, name) => {
+                                                                setChannelSettingsId(id);
+                                                                setChannelSettingsName(name);
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </SortableContext>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <DragOverlay>
+                                        {activeDragItem ? (
+                                            activeDragItem.type === "Category" ? (
+                                                <div className="p-2 bg-white shadow rounded border opacity-80 cursor-grabbing w-full">
+                                                    <div className="flex items-center gap-1 font-semibold text-gray-700">
+                                                        <ChevronDown className="h-3 w-3" />
+                                                        {activeDragItem.data.name}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="p-2 bg-white shadow rounded border opacity-80 cursor-grabbing flex items-center gap-2 w-full">
+                                                    <Hash className="h-4 w-4 text-gray-500" />
+                                                    {activeDragItem.data.name}
+                                                </div>
+                                            )
+                                        ) : null}
+                                    </DragOverlay>
+                                </>
+                            )}
+                        </nav>
 
                         <div className="flex items-center justify-between px-2 mt-4 mb-1">
                             <span className="text-xs font-semibold uppercase text-gray-500">
@@ -265,7 +483,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                                 })()}
                             </>
                         )}
-                    </nav>
+                    </DndContext>
                 </div>
 
                 <div className="border-t p-3 bg-gray-200">
@@ -319,6 +537,12 @@ export function Sidebar({ className, server }: SidebarProps) {
                     serverId={server.id}
                 />
             )}
+
+            <CreateCategoryModal
+                isOpen={isCreateCategoryOpen}
+                onClose={() => setIsCreateCategoryOpen(false)}
+                onSubmit={async (name) => { await createCategory(name); }}
+            />
         </>
     );
 }

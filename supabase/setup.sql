@@ -238,7 +238,43 @@ SELECT id, owner_id, 'owner' FROM public.servers
 ON CONFLICT (server_id, user_id) DO NOTHING;
 
 -- =====================
--- 4. GROUPS (CHANNELS) TABLE
+-- 4. CHANNEL CATEGORIES
+-- =====================
+CREATE TABLE IF NOT EXISTS public.channel_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  position INT DEFAULT 0,
+  is_collapsed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.channel_categories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view categories" ON public.channel_categories;
+CREATE POLICY "Anyone can view categories"
+  ON public.channel_categories FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Server owners can manage categories" ON public.channel_categories;
+DROP POLICY IF EXISTS "Authorized users can manage categories" ON public.channel_categories;
+
+CREATE POLICY "Authorized users can manage categories"
+  ON public.channel_categories FOR ALL TO authenticated
+  USING (
+    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = channel_categories.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
+    )
+  );
+
+CREATE INDEX IF NOT EXISTS idx_channel_categories_server ON public.channel_categories(server_id);
+
+-- =====================
+-- 5. GROUPS (CHANNELS) TABLE
 -- =====================
 CREATE TABLE IF NOT EXISTS public.groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -246,9 +282,18 @@ CREATE TABLE IF NOT EXISTS public.groups (
   description TEXT,
   owner_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
   server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES public.channel_categories(id) ON DELETE SET NULL,
+  position INT DEFAULT 0,
   image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+
+-- Ensure columns exist (migration support)
+ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES public.channel_categories(id) ON DELETE SET NULL;
+ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS position INT DEFAULT 0;
+ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 
@@ -259,6 +304,34 @@ CREATE POLICY "Anyone can view groups"
 DROP POLICY IF EXISTS "Authenticated users can create groups" ON public.groups;
 CREATE POLICY "Authenticated users can create groups"
   ON public.groups FOR INSERT TO authenticated WITH CHECK (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Authorized users can update groups" ON public.groups;
+CREATE POLICY "Authorized users can update groups"
+  ON public.groups FOR UPDATE TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM public.servers WHERE id = groups.server_id AND owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = groups.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
+    )
+  );
+
+DROP POLICY IF EXISTS "Authorized users can delete groups" ON public.groups;
+CREATE POLICY "Authorized users can delete groups"
+  ON public.groups FOR DELETE TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM public.servers WHERE id = groups.server_id AND owner_id = auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid() 
+        AND smr.server_id = groups.server_id
+        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
+    )
+  );
 
 -- Trigger to create default channel
 CREATE OR REPLACE FUNCTION public.handle_new_server_channel()
@@ -334,6 +407,7 @@ CREATE POLICY "Server members can send messages"
     )
   );
 
+DROP POLICY IF EXISTS "Users can delete own messages" ON public.messages;
 CREATE POLICY "Users can delete own messages"
   ON public.messages FOR DELETE TO authenticated
   USING (auth.uid() = sender_id);
@@ -486,6 +560,25 @@ DROP POLICY IF EXISTS "Anyone can view chat files" ON storage.objects;
 CREATE POLICY "Anyone can view chat files"
 ON storage.objects FOR SELECT TO authenticated USING (
   bucket_id = 'chat-files'
+);
+
+-- Server Icons bucket policies
+DROP POLICY IF EXISTS "Authenticated users can upload server icons" ON storage.objects;
+CREATE POLICY "Authenticated users can upload server icons"
+ON storage.objects FOR INSERT TO authenticated WITH CHECK (
+  bucket_id = 'server-icons'
+);
+
+DROP POLICY IF EXISTS "Anyone can view server icons" ON storage.objects;
+CREATE POLICY "Anyone can view server icons"
+ON storage.objects FOR SELECT USING (
+  bucket_id = 'server-icons'
+);
+
+DROP POLICY IF EXISTS "Server owners can update icons" ON storage.objects;
+CREATE POLICY "Server owners can update icons"
+ON storage.objects FOR UPDATE TO authenticated USING (
+  bucket_id = 'server-icons'
 );
 
 -- =====================

@@ -427,7 +427,91 @@ export default function ServerSettingsPage({
                 {activeTab === "general" && (
                     <div className="bg-white rounded-lg shadow-sm border p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4">General Settings</h2>
-                        <div className="space-y-4">
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Server Icon</label>
+                                <div className="flex items-center gap-4">
+                                    <div className="relative">
+                                        {server?.image_url ? (
+                                            <img
+                                                src={server.image_url}
+                                                alt={server.name}
+                                                className="h-20 w-20 rounded-full object-cover border-2 border-gray-200"
+                                            />
+                                        ) : (
+                                            <div className="h-20 w-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
+                                                {serverName?.charAt(0)?.toUpperCase() || "S"}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            type="file"
+                                            id="server-icon"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file || !server) return;
+                                                setSaving(true);
+                                                setMessage(null);
+
+                                                const fileExt = file.name.split('.').pop();
+                                                const fileName = `${server.id}/icon.${fileExt}`;
+
+                                                const { error: uploadError } = await supabase.storage
+                                                    .from('server-icons')
+                                                    .upload(fileName, file, { upsert: true });
+
+                                                if (uploadError) {
+                                                    setMessage({ type: "error", text: "Upload failed: " + uploadError.message });
+                                                    setSaving(false);
+                                                    return;
+                                                }
+
+                                                const { data: urlData } = supabase.storage
+                                                    .from('server-icons')
+                                                    .getPublicUrl(fileName);
+
+                                                const { error: updateError } = await supabase
+                                                    .from("servers")
+                                                    .update({ image_url: urlData.publicUrl })
+                                                    .eq("id", server.id);
+
+                                                if (updateError) {
+                                                    setMessage({ type: "error", text: updateError.message });
+                                                } else {
+                                                    setServer({ ...server, image_url: urlData.publicUrl });
+                                                    setMessage({ type: "success", text: "Server icon updated!" });
+                                                }
+                                                setSaving(false);
+                                            }}
+                                        />
+                                        <label
+                                            htmlFor="server-icon"
+                                            className="px-4 py-2 bg-white border rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-2"
+                                        >
+                                            {saving ? "Uploading..." : "Upload Image"}
+                                        </label>
+                                        {server?.image_url && (
+                                            <button
+                                                onClick={async () => {
+                                                    if (!server) return;
+                                                    setSaving(true);
+                                                    await supabase.from("servers").update({ image_url: null }).eq("id", server.id);
+                                                    setServer({ ...server, image_url: null });
+                                                    setSaving(false);
+                                                    setMessage({ type: "success", text: "Server icon removed!" });
+                                                }}
+                                                className="text-sm text-red-600 hover:text-red-700"
+                                            >
+                                                Remove Icon
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Recommended: 256x256 PNG or JPG</p>
+                            </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Server Name</label>
                                 <Input value={serverName} onChange={(e) => setServerName(e.target.value)} />

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 
-type Channel = Database["public"]["Tables"]["groups"]["Row"];
+type Channel = Database["public"]["Tables"]["groups"]["Row"] & { category_id?: string | null };
 
 export function useServerChannels(serverId: string | null) {
     const [channels, setChannels] = useState<Channel[]>([]);
@@ -40,13 +40,25 @@ export function useServerChannels(serverId: string | null) {
             .on(
                 "postgres_changes",
                 {
-                    event: "INSERT",
+                    event: "*",
                     schema: "public",
                     table: "groups",
                     filter: `server_id=eq.${serverId}`,
                 },
                 (payload) => {
-                    setChannels((prev) => [...prev, payload.new as Channel]);
+                    if (payload.eventType === "INSERT") {
+                        setChannels((prev) => [...prev, payload.new as Channel]);
+                    } else if (payload.eventType === "UPDATE") {
+                        setChannels((prev) =>
+                            prev.map((channel) =>
+                                channel.id === payload.new.id ? (payload.new as Channel) : channel
+                            )
+                        );
+                    } else if (payload.eventType === "DELETE") {
+                        setChannels((prev) =>
+                            prev.filter((channel) => channel.id !== payload.old.id)
+                        );
+                    }
                 }
             )
             .subscribe();
@@ -76,5 +88,15 @@ export function useServerChannels(serverId: string | null) {
         return null;
     };
 
-    return { channels, loading, createChannel };
+    const updateChannel = async (channelId: string, updates: Partial<Channel>) => {
+        setChannels((prev) =>
+            prev.map((c) => (c.id === channelId ? { ...c, ...updates } : c))
+        );
+        const { error } = await supabase.from("groups").update(updates).eq("id", channelId);
+        if (error) {
+            console.error("Error updating channel:", error);
+        }
+    };
+
+    return { channels, loading, createChannel, updateChannel };
 }
