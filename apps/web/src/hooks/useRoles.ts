@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 
-type Role = Database["public"]["Tables"]["server_roles"]["Row"];
+export type Role = Database["public"]["Tables"]["server_roles"]["Row"];
 
 export function useRoles(serverId: string) {
     const [roles, setRoles] = useState<Role[]>([]);
