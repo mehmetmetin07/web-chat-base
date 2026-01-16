@@ -10,6 +10,7 @@ import { useFileUpload } from "@/hooks/useFileUpload";
 import { FileMessage } from "../molecules/FileMessage";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { TypingIndicator } from "@/components/molecules/TypingIndicator";
+import { Trash2 } from "lucide-react";
 
 type User = Database["public"]["Tables"]["users"]["Row"];
 
@@ -33,7 +34,7 @@ function MessageSkeleton() {
 }
 
 export function DMChatArea({ userId }: { userId: string }) {
-    const { messages, loading, sendMessage, currentUserId } = useDM(userId);
+    const { messages, loading, sendMessage, currentUserId, deleteMessage } = useDM(userId);
     const [newMessage, setNewMessage] = useState("");
     const [otherUser, setOtherUser] = useState<User | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -41,7 +42,7 @@ export function DMChatArea({ userId }: { userId: string }) {
     // Features state
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { uploadFile, uploading: isUploading } = useFileUpload(null); // Pass null for DM
+    const { uploadFile, uploading: isUploading, error: uploadError } = useFileUpload(null); // Pass null for DM
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -108,6 +109,24 @@ export function DMChatArea({ userId }: { userId: string }) {
         }
     };
 
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData.items;
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                if (file) {
+                    setSelectedFile(file);
+                }
+            }
+        }
+    };
+
+    const handleDelete = async (messageId: string) => {
+        if (confirm("Are you sure you want to delete this message?")) {
+            await deleteMessage(messageId);
+        }
+    };
+
     return (
         <div className="flex h-full flex-1 flex-col bg-white">
             <div className="flex h-14 items-center justify-between border-b px-4">
@@ -128,7 +147,16 @@ export function DMChatArea({ userId }: { userId: string }) {
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-auto p-4 relative" onClick={() => setShowEmojiPicker(false)}>
+            <div className="flex-1 overflow-auto p-4 relative" onClick={() => setShowEmojiPicker(false)} onPaste={handlePaste}>
+                {uploadError && (
+                    <div className="absolute top-4 left-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative z-10" role="alert">
+                        <strong className="font-bold">Upload Error: </strong>
+                        <span className="block sm:inline">{uploadError}</span>
+                        <span className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setSelectedFile(null)}>
+                            <X className="h-6 w-6 text-red-500 cursor-pointer" />
+                        </span>
+                    </div>
+                )}
                 <div className="flex flex-col gap-1">
                     {loading ? (
                         <MessageSkeleton />
@@ -175,7 +203,16 @@ export function DMChatArea({ userId }: { userId: string }) {
                                         </div>
                                     )}
 
-                                    <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}>
+                                    <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%] group relative`}>
+                                        {isOwn && (
+                                            <button
+                                                onClick={() => handleDelete(msg.id)}
+                                                className="absolute -top-3 right-0 p-1 bg-white rounded-full shadow-sm border opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:bg-red-50 z-10"
+                                                title="Delete Message"
+                                            >
+                                                <Trash2 className="h-3 w-3" />
+                                            </button>
+                                        )}
                                         {showHeader && (
                                             <div className="flex items-center gap-2 mb-1">
                                                 <span className={`text-sm font-medium cursor-pointer hover:underline ${isOwn ? "text-blue-600" : "text-gray-900"}`}>
@@ -266,7 +303,7 @@ export function DMChatArea({ userId }: { userId: string }) {
                     </Button>
                 </div>
                 <div className="text-[10px] text-gray-400 mt-2 text-center">
-                    Files up to 50MB allowed. Images and videos will preview automatically.
+                    Files up to 10MB allowed. Images and videos will preview automatically. Paste images with Ctrl+V.
                 </div>
             </div>
         </div>

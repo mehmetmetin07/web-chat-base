@@ -108,6 +108,17 @@ export function useDM(otherUserId: string) {
                     }
                 }
             )
+            .on(
+                "postgres_changes",
+                {
+                    event: "DELETE",
+                    schema: "public",
+                    table: "messages",
+                },
+                (payload) => {
+                    setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+                }
+            )
             .subscribe((status) => {
                 console.log(`DM Subscription status for user ${otherUserId}:`, status);
             });
@@ -153,5 +164,10 @@ export function useDM(otherUserId: string) {
         }
     };
 
-    return { messages, loading, sendMessage, currentUserId };
+    const deleteMessage = async (messageId: string) => {
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        await supabase.from("messages").delete().eq("id", messageId);
+    };
+
+    return { messages, loading, sendMessage, currentUserId, deleteMessage };
 }
