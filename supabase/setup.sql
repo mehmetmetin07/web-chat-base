@@ -99,35 +99,14 @@ DROP POLICY IF EXISTS "Server admins can ban" ON public.server_bans;
 CREATE POLICY "Server admins can ban"
   ON public.server_bans FOR INSERT TO authenticated 
   WITH CHECK (
-    -- Server owner can always ban
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    -- Or admins with ban permission
-    OR server_id IN (
-      SELECT sm.server_id FROM public.server_members sm
-      WHERE sm.user_id = auth.uid() AND sm.role IN ('owner', 'admin')
-    )
-    -- Or via role system
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_bans.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'BAN_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'BAN_MEMBERS'::text)
   );
 
 DROP POLICY IF EXISTS "Server admins can unban" ON public.server_bans;
 CREATE POLICY "Server admins can unban"
   ON public.server_bans FOR DELETE TO authenticated 
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_bans.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'BAN_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'BAN_MEMBERS'::text)
   );
 
 -- Trigger to auto-remove member when banned
@@ -186,35 +165,14 @@ DROP POLICY IF EXISTS "Admins can kick members" ON public.server_members;
 CREATE POLICY "Admins can kick members"
   ON public.server_members FOR DELETE TO authenticated 
   USING (
-    -- Server owner can kick anyone
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    -- Or legacy role check
-    OR server_id IN (
-      SELECT sm.server_id FROM public.server_members sm
-      WHERE sm.user_id = auth.uid() AND sm.role IN ('owner', 'admin')
-    )
-    -- Or via new role system
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_members.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'KICK_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'KICK_MEMBERS'::text)
   );
 
 DROP POLICY IF EXISTS "Admins can update member roles" ON public.server_members;
 CREATE POLICY "Admins can update member roles"
   ON public.server_members FOR UPDATE TO authenticated
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_members.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_ROLES' = 'true')
-    )
+    public.has_server_permission(server_id, 'MANAGE_ROLES'::text)
   );
 
 -- Trigger to add owner as member
@@ -261,14 +219,7 @@ DROP POLICY IF EXISTS "Authorized users can manage categories" ON public.channel
 CREATE POLICY "Authorized users can manage categories"
   ON public.channel_categories FOR ALL TO authenticated
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = channel_categories.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MANAGE_CHANNELS'::text)
   );
 
 CREATE INDEX IF NOT EXISTS idx_channel_categories_server ON public.channel_categories(server_id);
@@ -309,28 +260,14 @@ DROP POLICY IF EXISTS "Authorized users can update groups" ON public.groups;
 CREATE POLICY "Authorized users can update groups"
   ON public.groups FOR UPDATE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM public.servers WHERE id = groups.server_id AND owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = groups.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MANAGE_CHANNELS'::text)
   );
 
 DROP POLICY IF EXISTS "Authorized users can delete groups" ON public.groups;
 CREATE POLICY "Authorized users can delete groups"
   ON public.groups FOR DELETE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM public.servers WHERE id = groups.server_id AND owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = groups.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MANAGE_CHANNELS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MANAGE_CHANNELS'::text)
   );
 
 -- Trigger to create default channel
@@ -525,18 +462,7 @@ DROP POLICY IF EXISTS "Server owners can manage permissions" ON public.channel_p
 CREATE POLICY "Server owners can manage permissions"
   ON public.channel_permissions FOR ALL TO authenticated
   USING (
-    channel_id IN (
-      SELECT g.id FROM public.groups g
-      JOIN public.servers s ON s.id = g.server_id
-      WHERE s.owner_id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid()
-        AND sr.server_id = (SELECT server_id FROM public.groups WHERE id = channel_permissions.channel_id)
-        AND sr.permissions->>'ADMINISTRATOR' = 'true'
-    )
+    public.has_server_permission((SELECT server_id FROM public.groups WHERE id = channel_permissions.channel_id), 'ADMINISTRATOR'::text)
   );
 
 CREATE INDEX IF NOT EXISTS idx_channel_permissions_channel ON public.channel_permissions(channel_id);
@@ -604,6 +530,50 @@ ON storage.objects FOR UPDATE TO authenticated USING (
 -- 10. ADVANCED ROLE SYSTEM
 -- =====================
 
+-- ================================================
+-- HELPER FUNCTION FOR PERMISSIONS (Avoids Infinite Recursion)
+-- ================================================
+CREATE OR REPLACE FUNCTION public.has_server_permission(p_server_id UUID, p_permission TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_is_owner BOOLEAN;
+  v_has_perm BOOLEAN;
+BEGIN
+  -- 1. Check if user is owner (direct check on servers table)
+  SELECT EXISTS (
+    SELECT 1 FROM public.servers 
+    WHERE id = p_server_id AND owner_id = v_user_id
+  ) INTO v_is_owner;
+  
+  IF v_is_owner THEN
+    RETURN TRUE;
+  END IF;
+
+  -- 2. Check if user has role with specific permission (or ADMINISTRATOR)
+  -- We use a direct query here (SECURITY DEFINER context) to avoid RLS recursion
+  SELECT EXISTS (
+    SELECT 1 
+    FROM public.server_member_roles smr
+    JOIN public.server_roles sr ON sr.id = smr.role_id
+    WHERE smr.server_id = p_server_id 
+      AND smr.user_id = v_user_id
+      AND (
+        (sr.permissions->>'ADMINISTRATOR')::boolean IS TRUE 
+        OR 
+        (sr.permissions->>p_permission)::boolean IS TRUE
+      )
+  ) INTO v_has_perm;
+
+  RETURN v_has_perm;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- =====================
+-- 10. ADVANCED ROLE SYSTEM (Updated Policies)
+-- =====================
+
 -- 10.1 SERVER ROLES
 CREATE TABLE IF NOT EXISTS public.server_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -622,13 +592,11 @@ DROP POLICY IF EXISTS "Anyone can view server roles" ON public.server_roles;
 CREATE POLICY "Anyone can view server roles"
   ON public.server_roles FOR SELECT TO authenticated USING (true);
 
-DROP POLICY IF EXISTS "Server owners can manage roles" ON public.server_roles;
 DROP POLICY IF EXISTS "Authorized users can manage roles" ON public.server_roles;
-
 CREATE POLICY "Authorized users can manage roles"
   ON public.server_roles FOR ALL TO authenticated
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    public.has_server_permission(server_id, 'MANAGE_ROLES'::text)
   );
 
 -- 10.2 SERVER MEMBER ROLES (Many-to-Many)
@@ -647,13 +615,11 @@ DROP POLICY IF EXISTS "Anyone can view member roles" ON public.server_member_rol
 CREATE POLICY "Anyone can view member roles"
   ON public.server_member_roles FOR SELECT TO authenticated USING (true);
 
-DROP POLICY IF EXISTS "Server owners can manage member roles" ON public.server_member_roles;
 DROP POLICY IF EXISTS "Authorized users can manage member roles" ON public.server_member_roles;
-
 CREATE POLICY "Authorized users can manage member roles"
   ON public.server_member_roles FOR ALL TO authenticated
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
+    public.has_server_permission(server_id, 'MANAGE_ROLES'::text)
   );
 
 -- Indexes for Role System
@@ -722,17 +688,9 @@ DROP POLICY IF EXISTS "Admins can create moderation logs" ON public.moderation_l
 CREATE POLICY "Admins can create moderation logs"
   ON public.moderation_logs FOR INSERT TO authenticated
   WITH CHECK (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = moderation_logs.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' 
-             OR sr.permissions->>'KICK_MEMBERS' = 'true'
-             OR sr.permissions->>'BAN_MEMBERS' = 'true'
-             OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MODERATE_MEMBERS'::text) 
+    OR public.has_server_permission(server_id, 'KICK_MEMBERS')
+    OR public.has_server_permission(server_id, 'BAN_MEMBERS')
   );
 
 -- Server mutes (temporary silencing)
@@ -757,28 +715,14 @@ DROP POLICY IF EXISTS "Admins can mute members" ON public.server_mutes;
 CREATE POLICY "Admins can mute members"
   ON public.server_mutes FOR INSERT TO authenticated
   WITH CHECK (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_mutes.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MODERATE_MEMBERS'::text)
   );
 
 DROP POLICY IF EXISTS "Admins can unmute members" ON public.server_mutes;
 CREATE POLICY "Admins can unmute members"
   ON public.server_mutes FOR DELETE TO authenticated
   USING (
-    server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.server_member_roles smr
-      JOIN public.server_roles sr ON sr.id = smr.role_id
-      WHERE smr.user_id = auth.uid() 
-        AND smr.server_id = server_mutes.server_id
-        AND (sr.permissions->>'ADMINISTRATOR' = 'true' OR sr.permissions->>'MODERATE_MEMBERS' = 'true')
-    )
+    public.has_server_permission(server_id, 'MODERATE_MEMBERS'::text)
   );
 
 -- Function to check if user is muted

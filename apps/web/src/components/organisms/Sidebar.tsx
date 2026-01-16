@@ -64,6 +64,11 @@ interface SidebarProps {
     server: Server | null;
 }
 
+import { MemberContextMenu } from "@/components/molecules/MemberContextMenu";
+import { useRoles } from "@/hooks/useRoles";
+
+// ... (keep existing imports)
+
 export function Sidebar({ className, server }: SidebarProps) {
     const pathname = usePathname();
     const activeServerId = server?.id ?? null;
@@ -71,6 +76,7 @@ export function Sidebar({ className, server }: SidebarProps) {
     const { users, members, loading: usersLoading, currentUserProfile } = useUsers(activeServerId);
     const { categories, createCategory, toggleCollapsed } = useChannelCategories(activeServerId);
     const { can, isOwner } = useServerPermissions(activeServerId || "");
+    const { roles, assignRoleToMember, removeRoleFromMember, kickMember, banMember } = useRoles(activeServerId || "");
     const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -80,6 +86,7 @@ export function Sidebar({ className, server }: SidebarProps) {
     const [channelSettingsId, setChannelSettingsId] = useState<string | null>(null);
     const [channelSettingsName, setChannelSettingsName] = useState<string>("");
     const [isCreateCategoryOpen, setIsCreateCategoryOpen] = useState(false);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: any } | null>(null);
 
     // DnD State
     const [activeDragItem, setActiveDragItem] = useState<{ id: string; type: "Channel" | "Category"; data: any } | null>(null);
@@ -240,16 +247,18 @@ export function Sidebar({ className, server }: SidebarProps) {
                     )}
                 </div>
 
-                <button
-                    onClick={() => setShowInvite(!showInvite)}
-                    className="flex items-center justify-between px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm border-b"
-                >
-                    <span className="flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        Invite People
-                    </span>
-                    <LinkIcon className="h-4 w-4" />
-                </button>
+                {(isOwner || can("ADMINISTRATOR") || can("MANAGE_SERVER")) && (
+                    <button
+                        onClick={() => setShowInvite(!showInvite)}
+                        className="flex items-center justify-between px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm border-b"
+                    >
+                        <span className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            Invite People
+                        </span>
+                        <LinkIcon className="h-4 w-4" />
+                    </button>
+                )}
 
                 {showInvite && (
                     <div className="p-3 bg-blue-50 border-b space-y-2">
@@ -296,14 +305,16 @@ export function Sidebar({ className, server }: SidebarProps) {
                                             <FolderPlus className="h-4 w-4" />
                                         </button>
                                     )}
-                                    <button
-                                        onClick={() => setIsCreateChannelOpen(true)}
-                                        className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                                        disabled={!userId}
-                                        title="Create Channel"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
+                                    {(isOwner || can("ADMINISTRATOR") || can("MANAGE_CHANNELS")) && (
+                                        <button
+                                            onClick={() => setIsCreateChannelOpen(true)}
+                                            className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                                            disabled={!userId}
+                                            title="Create Channel"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             {channelsLoading ? (
@@ -453,6 +464,10 @@ export function Sidebar({ className, server }: SidebarProps) {
                                                 <Link
                                                     key={member.id}
                                                     href={`/servers/${server.id}/dm/${member.id}`}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        setContextMenu({ x: e.clientX, y: e.clientY, member });
+                                                    }}
                                                     className="group flex items-center gap-3 rounded px-2 py-2 text-gray-600 transition-all hover:bg-gray-200"
                                                 >
                                                     <div className="relative">
@@ -543,6 +558,36 @@ export function Sidebar({ className, server }: SidebarProps) {
                 onClose={() => setIsCreateCategoryOpen(false)}
                 onSubmit={async (name) => { await createCategory(name); }}
             />
+
+            {contextMenu && (
+                <MemberContextMenu
+                    position={{ x: contextMenu.x, y: contextMenu.y }}
+                    onClose={() => setContextMenu(null)}
+                    member={contextMenu.member}
+                    roles={roles}
+                    canManageRoles={isOwner || can("ADMINISTRATOR") || can("MANAGE_ROLES")}
+                    canKick={isOwner || can("ADMINISTRATOR") || can("KICK_MEMBERS")}
+                    canBan={isOwner || can("ADMINISTRATOR") || can("BAN_MEMBERS")}
+                    onAssignRole={async (roleId) => {
+                        await assignRoleToMember(contextMenu.member.id, roleId);
+                    }}
+                    onRemoveRole={async (roleId) => {
+                        await removeRoleFromMember(contextMenu.member.id, roleId);
+                    }}
+                    onKick={async () => {
+                        if (confirm(`Are you sure you want to kick ${contextMenu.member.full_name}?`)) {
+                            await kickMember(contextMenu.member.id);
+                            setContextMenu(null);
+                        }
+                    }}
+                    onBan={async () => {
+                        if (confirm(`Are you sure you want to ban ${contextMenu.member.full_name}?`)) {
+                            await banMember(contextMenu.member.id);
+                            setContextMenu(null);
+                        }
+                    }}
+                />
+            )}
         </>
     );
 }

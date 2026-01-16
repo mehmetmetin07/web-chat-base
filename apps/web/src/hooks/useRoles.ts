@@ -128,5 +128,73 @@ export function useRoles(serverId: string) {
         }
     };
 
-    return { roles, loading, error, createRole, updateRole, deleteRole, updateRolePositions };
+    const assignRoleToMember = async (memberId: string, roleId: string) => {
+        try {
+            const { error } = await supabase
+                .from("server_member_roles")
+                .insert({
+                    server_id: serverId,
+                    user_id: memberId,
+                    role_id: roleId,
+                });
+
+            if (error) throw error;
+        } catch (err: any) {
+            console.error("Error assigning role:", err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    const removeRoleFromMember = async (memberId: string, roleId: string) => {
+        try {
+            const { error } = await supabase
+                .from("server_member_roles")
+                .delete()
+                .eq("server_id", serverId)
+                .eq("user_id", memberId)
+                .eq("role_id", roleId);
+
+            if (error) throw error;
+        } catch (err: any) {
+            console.error("Error removing role:", err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    const kickMember = async (memberId: string) => {
+        try {
+            const { error } = await supabase
+                .from("server_members")
+                .delete()
+                .eq("server_id", serverId)
+                .eq("user_id", memberId);
+
+            if (error) throw error;
+        } catch (err: any) {
+            console.error("Error kicking member:", err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    const banMember = async (memberId: string) => {
+        try {
+            const { error } = await supabase
+                .from("server_bans")
+                .insert({
+                    server_id: serverId,
+                    user_id: memberId,
+                });
+
+            if (error) throw error;
+        } catch (err: any) {
+            console.error("Error banning member:", err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    return { roles, loading, error, createRole, updateRole, deleteRole, updateRolePositions, assignRoleToMember, removeRoleFromMember, kickMember, banMember };
 }
