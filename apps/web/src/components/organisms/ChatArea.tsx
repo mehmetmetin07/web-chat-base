@@ -13,6 +13,8 @@ import { Users, AlertCircle, Smile, X, Paperclip, File, Image, Download, Loader2
 import { FileMessage } from "@/components/molecules/FileMessage";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { TypingIndicator } from "@/components/molecules/TypingIndicator";
+import { ConfirmModal } from "@/components/molecules/ConfirmModal";
+import { Trash2 } from "lucide-react";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -56,7 +58,7 @@ function formatFileSize(bytes: number) {
 // FileMessage imported from molecules
 
 export function ChatArea({ channelId }: { channelId: string }) {
-    const { messages, loading, sendMessage, sendFileMessage } = useChat(channelId);
+    const { messages, loading, sendMessage, sendFileMessage, deleteMessage } = useChat(channelId);
     const { members, isMember, loading: membersLoading, serverId } = useChannelMembers(channelId);
     const { checkMessage, settings } = useServerSettings(serverId);
     const { uploadFile, validateFile, uploading, error: uploadError, setError: setUploadError } = useFileUpload(serverId);
@@ -66,6 +68,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
     const [showMembers, setShowMembers] = useState(false);
     const [showEmoji, setShowEmoji] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +103,10 @@ export function ChatArea({ channelId }: { channelId: string }) {
         setShowEmoji(false);
     };
 
+    const handleDelete = (messageId: string) => {
+        setMessageToDelete(messageId);
+    };
+
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !userId) return;
@@ -122,6 +129,37 @@ export function ChatArea({ channelId }: { channelId: string }) {
         }
     };
 
+    const handlePaste = async (e: React.ClipboardEvent) => {
+        const items = e.clipboardData.items;
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                if (!file || !userId) continue;
+
+                const allowedTypes = settings?.allowed_file_types || [];
+                const isValid = await validateFile(file, allowedTypes);
+                if (!isValid) return;
+
+                const result = await uploadFile(file);
+                if (result) {
+                    let fileType = "file";
+                    if (file.type.startsWith("image/")) fileType = "image";
+                    else if (file.type.startsWith("video/")) fileType = "video";
+
+                    await sendFileMessage(result.url, userId, fileType);
+                }
+            }
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (messageToDelete) {
+            await deleteMessage(messageToDelete);
+            setMessageToDelete(null);
+        }
+    };
+
+
     const onEmojiClick = (emojiData: any) => {
         setNewMessage((prev) => prev + emojiData.emoji);
         inputRef.current?.focus();
@@ -143,7 +181,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
     };
 
     return (
-        <div className="flex h-full flex-1 flex-col bg-white relative">
+        <div className="flex h-full flex-1 flex-col bg-white relative" onPaste={handlePaste}>
             <div className="flex h-14 items-center justify-between border-b px-4">
                 <div className="font-medium"># {channelId.slice(0, 8)}...</div>
                 <button
@@ -209,7 +247,7 @@ export function ChatArea({ channelId }: { channelId: string }) {
                                             <div className="flex-1 h-px bg-gray-200" />
                                         </div>
                                     )}
-                                    <div className={`flex gap-3 ${isOwn ? "flex-row-reverse" : ""}`}>
+                                    <div className={`flex gap-3 group/message ${isOwn ? "flex-row-reverse" : ""}`}>
                                         {showHeader ? (
                                             display.avatar ? (
                                                 <img src={display.avatar} alt={display.name} className="h-10 w-10 rounded-full object-cover flex-shrink-0" />
@@ -221,7 +259,16 @@ export function ChatArea({ channelId }: { channelId: string }) {
                                         ) : (
                                             <div className="w-10 flex-shrink-0" />
                                         )}
-                                        <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}>
+                                        <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%] group relative`}>
+                                            {isOwn && (
+                                                <button
+                                                    onClick={() => handleDelete(msg.id)}
+                                                    className="absolute -top-3 right-0 p-1 bg-white rounded-full shadow-sm border opacity-0 group-hover/message:opacity-100 transition-opacity text-red-500 hover:bg-red-50 z-10"
+                                                    title="Delete Message"
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                </button>
+                                            )}
                                             {showHeader && (
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <span className={`text-sm font-medium ${isOwn ? "text-blue-600" : "text-gray-900"}`}>
@@ -285,6 +332,15 @@ export function ChatArea({ channelId }: { channelId: string }) {
             <div className="px-4">
                 <TypingIndicator typingUsers={typingUsers} />
             </div>
+
+            <ConfirmModal
+                isOpen={!!messageToDelete}
+                onClose={() => setMessageToDelete(null)}
+                onConfirm={confirmDelete}
+                title="Delete Message"
+                message="Are you sure you want to delete this message? This action cannot be undone."
+            />
+
             <div className="p-4 border-t">
                 <div className="flex gap-2">
                     <button

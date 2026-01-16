@@ -10,6 +10,7 @@ import { useFileUpload } from "@/hooks/useFileUpload";
 import { FileMessage } from "../molecules/FileMessage";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { TypingIndicator } from "@/components/molecules/TypingIndicator";
+import { ConfirmModal } from "@/components/molecules/ConfirmModal";
 import { Trash2 } from "lucide-react";
 
 type User = Database["public"]["Tables"]["users"]["Row"];
@@ -45,6 +46,7 @@ export function DMChatArea({ userId }: { userId: string }) {
     const { uploadFile, uploading: isUploading, error: uploadError } = useFileUpload(null); // Pass null for DM
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
 
     useEffect(() => {
         if (currentUserId) {
@@ -121,9 +123,14 @@ export function DMChatArea({ userId }: { userId: string }) {
         }
     };
 
-    const handleDelete = async (messageId: string) => {
-        if (confirm("Are you sure you want to delete this message?")) {
-            await deleteMessage(messageId);
+    const handleDelete = (messageId: string) => {
+        setMessageToDelete(messageId);
+    };
+
+    const confirmDelete = async () => {
+        if (messageToDelete) {
+            await deleteMessage(messageToDelete);
+            setMessageToDelete(null);
         }
     };
 
@@ -306,6 +313,14 @@ export function DMChatArea({ userId }: { userId: string }) {
                     Files up to 10MB allowed. Images and videos will preview automatically. Paste images with Ctrl+V.
                 </div>
             </div>
+
+            <ConfirmModal
+                isOpen={!!messageToDelete}
+                onClose={() => setMessageToDelete(null)}
+                onConfirm={confirmDelete}
+                title="Delete Message"
+                message="Are you sure you want to delete this message? This action cannot be undone."
+            />
         </div>
     );
 }

@@ -334,6 +334,11 @@ CREATE POLICY "Server members can send messages"
     )
   );
 
+CREATE POLICY "Users can delete own messages"
+  ON public.messages FOR DELETE TO authenticated
+  USING (auth.uid() = sender_id);
+
+
 -- =====================
 -- 6. INDEXES
 -- =====================
