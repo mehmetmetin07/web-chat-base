@@ -418,9 +418,24 @@ CREATE TABLE public.channel_permissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   channel_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
   role_id UUID REFERENCES public.server_roles(id) ON DELETE CASCADE,
+  -- Basic Permissions
+  can_view BOOLEAN DEFAULT true,
   can_send BOOLEAN DEFAULT true,
+  can_read_history BOOLEAN DEFAULT true,
+  -- Content Permissions
   can_attach BOOLEAN DEFAULT true,
+  can_embed_links BOOLEAN DEFAULT true,
+  can_add_reactions BOOLEAN DEFAULT true,
+  can_use_external_emojis BOOLEAN DEFAULT true,
+  -- Interaction Permissions
   can_mention BOOLEAN DEFAULT true,
+  can_mention_everyone BOOLEAN DEFAULT false,
+  can_create_invite BOOLEAN DEFAULT true,
+  -- Moderation Permissions
+  can_manage BOOLEAN DEFAULT false,
+  can_delete_messages BOOLEAN DEFAULT false,
+  can_pin_messages BOOLEAN DEFAULT false,
+  -- Rate Limiting
   slowmode_seconds INT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(channel_id, role_id)

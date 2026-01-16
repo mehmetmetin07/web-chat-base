@@ -16,18 +16,45 @@ type ChannelPermission = {
     id?: string;
     channel_id: string;
     role_id: string;
+    // Basic
+    can_view: boolean;
     can_send: boolean;
+    can_read_history: boolean;
+    // Content
     can_attach: boolean;
+    can_embed_links: boolean;
+    can_add_reactions: boolean;
+    can_use_external_emojis: boolean;
+    // Interaction
     can_mention: boolean;
+    can_mention_everyone: boolean;
+    can_create_invite: boolean;
+    // Moderation
+    can_manage: boolean;
+    can_delete_messages: boolean;
+    can_pin_messages: boolean;
+    // Rate Limiting
     slowmode_seconds: number;
 };
 
 const DEFAULT_PERMISSIONS: Omit<ChannelPermission, "id" | "channel_id" | "role_id"> = {
+    can_view: true,
     can_send: true,
+    can_read_history: true,
     can_attach: true,
+    can_embed_links: true,
+    can_add_reactions: true,
+    can_use_external_emojis: true,
     can_mention: true,
+    can_mention_everyone: false,
+    can_create_invite: true,
+    can_manage: false,
+    can_delete_messages: false,
+    can_pin_messages: false,
     slowmode_seconds: 0,
 };
+
+export type PermissionField = keyof Omit<ChannelPermission, "id" | "channel_id" | "role_id">;
 
 export function useChannelPermissions(channelId: string | null, serverId: string | null) {
     const [permissions, setPermissions] = useState<ChannelPermission[]>([]);
@@ -71,7 +98,7 @@ export function useChannelPermissions(channelId: string | null, serverId: string
 
     const updatePermission = async (
         roleId: string,
-        field: keyof Omit<ChannelPermission, "id" | "channel_id" | "role_id">,
+        field: PermissionField,
         value: boolean | number
     ) => {
         if (!channelId) return;
@@ -83,6 +110,10 @@ export function useChannelPermissions(channelId: string | null, serverId: string
                 .from("channel_permissions")
                 .update({ [field]: value })
                 .eq("id", existing.id);
+
+            setPermissions((prev) =>
+                prev.map((p) => (p.role_id === roleId ? { ...p, [field]: value } : p))
+            );
         } else {
             const { data } = await supabase
                 .from("channel_permissions")
@@ -97,13 +128,8 @@ export function useChannelPermissions(channelId: string | null, serverId: string
 
             if (data) {
                 setPermissions((prev) => [...prev, data as ChannelPermission]);
-                return;
             }
         }
-
-        setPermissions((prev) =>
-            prev.map((p) => (p.role_id === roleId ? { ...p, [field]: value } : p))
-        );
     };
 
     const getPermissionForRole = (roleId: string): ChannelPermission => {
