@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
-import { X, Hash, Shield, Clock, Check } from "lucide-react";
+import { X, Hash, Shield, Clock, Check, Loader2 } from "lucide-react";
 import { useChannelPermissions } from "@/hooks/useChannelPermissions";
 import { supabase } from "@/lib/supabase";
 
@@ -14,8 +14,6 @@ interface ChannelSettingsModalProps {
     channelName: string;
     serverId: string;
 }
-
-const ROLES: Array<"admin" | "moderator" | "member"> = ["admin", "moderator", "member"];
 
 const SLOWMODE_OPTIONS = [
     { value: 0, label: "Off" },
@@ -28,7 +26,7 @@ const SLOWMODE_OPTIONS = [
 ];
 
 export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, serverId }: ChannelSettingsModalProps) {
-    const { permissions, loading, updatePermission, getPermissionForRole } = useChannelPermissions(channelId);
+    const { roles, loading, updatePermission, getPermissionForRole } = useChannelPermissions(channelId, serverId);
     const [name, setName] = useState(channelName);
     const [activeTab, setActiveTab] = useState<"general" | "permissions">("general");
     const [saving, setSaving] = useState(false);
@@ -49,12 +47,12 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
         setTimeout(() => setSaved(false), 2000);
     };
 
-    const handleToggle = async (role: "admin" | "moderator" | "member", field: "can_send" | "can_attach" | "can_mention", current: boolean) => {
-        await updatePermission(role, field, !current);
+    const handleToggle = async (roleId: string, field: "can_send" | "can_attach" | "can_mention", current: boolean) => {
+        await updatePermission(roleId, field, !current);
     };
 
-    const handleSlowmode = async (role: "admin" | "moderator" | "member", seconds: number) => {
-        await updatePermission(role, "slowmode_seconds", seconds);
+    const handleSlowmode = async (roleId: string, seconds: number) => {
+        await updatePermission(roleId, "slowmode_seconds", seconds);
     };
 
     return (
@@ -108,23 +106,35 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
                     )}
 
                     {activeTab === "permissions" && (
-                        <div className="space-y-6">
+                        <div className="space-y-4">
                             {loading ? (
-                                <div className="text-center text-gray-500 py-8">Loading permissions...</div>
+                                <div className="flex items-center justify-center text-gray-500 py-8 gap-2">
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                    Loading permissions...
+                                </div>
+                            ) : roles.length === 0 ? (
+                                <div className="text-center text-gray-500 py-8">No roles found for this server.</div>
                             ) : (
-                                ROLES.map((role) => {
-                                    const perm = getPermissionForRole(role);
+                                roles.map((role) => {
+                                    const perm = getPermissionForRole(role.id);
                                     return (
-                                        <div key={role} className="border rounded-lg p-4">
+                                        <div key={role.id} className="border rounded-lg p-4">
                                             <div className="flex items-center justify-between mb-4">
-                                                <span className="font-medium capitalize text-gray-900">{role}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <div
+                                                        className="w-3 h-3 rounded-full"
+                                                        style={{ backgroundColor: role.color || "#99aab5" }}
+                                                    />
+                                                    <span className="font-medium text-gray-900">{role.name}</span>
+                                                </div>
+                                                <span className="text-xs text-gray-400">Position: {role.position}</span>
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <label className="flex items-center gap-2 cursor-pointer">
                                                     <input
                                                         type="checkbox"
                                                         checked={perm.can_send}
-                                                        onChange={() => handleToggle(role, "can_send", perm.can_send)}
+                                                        onChange={() => handleToggle(role.id, "can_send", perm.can_send)}
                                                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                     />
                                                     <span className="text-sm text-gray-700">Send Messages</span>
@@ -133,7 +143,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
                                                     <input
                                                         type="checkbox"
                                                         checked={perm.can_attach}
-                                                        onChange={() => handleToggle(role, "can_attach", perm.can_attach)}
+                                                        onChange={() => handleToggle(role.id, "can_attach", perm.can_attach)}
                                                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                     />
                                                     <span className="text-sm text-gray-700">Attach Files</span>
@@ -142,7 +152,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
                                                     <input
                                                         type="checkbox"
                                                         checked={perm.can_mention}
-                                                        onChange={() => handleToggle(role, "can_mention", perm.can_mention)}
+                                                        onChange={() => handleToggle(role.id, "can_mention", perm.can_mention)}
                                                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                     />
                                                     <span className="text-sm text-gray-700">Mention Users</span>
@@ -151,7 +161,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channelId, channelName, 
                                                     <Clock className="h-4 w-4 text-gray-400" />
                                                     <select
                                                         value={perm.slowmode_seconds}
-                                                        onChange={(e) => handleSlowmode(role, parseInt(e.target.value))}
+                                                        onChange={(e) => handleSlowmode(role.id, parseInt(e.target.value))}
                                                         className="text-sm border rounded px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
                                                     >
                                                         {SLOWMODE_OPTIONS.map((opt) => (

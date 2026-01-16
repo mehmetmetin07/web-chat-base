@@ -3,71 +3,80 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
+type ServerRole = {
+    id: string;
+    server_id: string;
+    name: string;
+    color: string;
+    position: number;
+    permissions: Record<string, boolean>;
+};
+
 type ChannelPermission = {
     id?: string;
     channel_id: string;
-    role: "admin" | "moderator" | "member";
+    role_id: string;
     can_send: boolean;
     can_attach: boolean;
     can_mention: boolean;
     slowmode_seconds: number;
 };
 
-const DEFAULT_PERMISSIONS: Omit<ChannelPermission, "id" | "channel_id"> = {
-    role: "member",
+const DEFAULT_PERMISSIONS: Omit<ChannelPermission, "id" | "channel_id" | "role_id"> = {
     can_send: true,
     can_attach: true,
     can_mention: true,
     slowmode_seconds: 0,
 };
 
-export function useChannelPermissions(channelId: string | null) {
+export function useChannelPermissions(channelId: string | null, serverId: string | null) {
     const [permissions, setPermissions] = useState<ChannelPermission[]>([]);
+    const [roles, setRoles] = useState<ServerRole[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchPermissions = useCallback(async () => {
-        if (!channelId) {
+    const fetchData = useCallback(async () => {
+        if (!channelId || !serverId) {
             setLoading(false);
             return;
         }
         setLoading(true);
         setError(null);
 
-        const { data, error: fetchError } = await supabase
-            .from("channel_permissions")
-            .select("*")
-            .eq("channel_id", channelId);
+        const [rolesRes, permissionsRes] = await Promise.all([
+            supabase.from("server_roles").select("*").eq("server_id", serverId).order("position", { ascending: false }),
+            supabase.from("channel_permissions").select("*").eq("channel_id", channelId),
+        ]);
 
-        if (fetchError) {
-            setError(fetchError.message);
+        if (rolesRes.error) {
+            setError(rolesRes.error.message);
             setLoading(false);
             return;
         }
 
-        const roles: Array<"admin" | "moderator" | "member"> = ["admin", "moderator", "member"];
-        const fullPermissions = roles.map((role) => {
-            const existing = data?.find((p) => p.role === role);
-            if (existing) return existing as ChannelPermission;
-            return { ...DEFAULT_PERMISSIONS, role, channel_id: channelId };
-        });
+        if (permissionsRes.error) {
+            setError(permissionsRes.error.message);
+            setLoading(false);
+            return;
+        }
 
-        setPermissions(fullPermissions);
+        setRoles(rolesRes.data as ServerRole[]);
+        setPermissions(permissionsRes.data as ChannelPermission[]);
         setLoading(false);
-    }, [channelId]);
+    }, [channelId, serverId]);
 
     useEffect(() => {
-        fetchPermissions();
-    }, [fetchPermissions]);
+        fetchData();
+    }, [fetchData]);
 
     const updatePermission = async (
-        role: "admin" | "moderator" | "member",
-        field: keyof Omit<ChannelPermission, "id" | "channel_id" | "role">,
+        roleId: string,
+        field: keyof Omit<ChannelPermission, "id" | "channel_id" | "role_id">,
         value: boolean | number
     ) => {
         if (!channelId) return;
 
-        const existing = permissions.find((p) => p.role === role);
+        const existing = permissions.find((p) => p.role_id === roleId);
 
         if (existing?.id) {
             await supabase
@@ -75,21 +84,33 @@ export function useChannelPermissions(channelId: string | null) {
                 .update({ [field]: value })
                 .eq("id", existing.id);
         } else {
-            await supabase.from("channel_permissions").insert({
-                channel_id: channelId,
-                role,
-                [field]: value,
-            });
+            const { data } = await supabase
+                .from("channel_permissions")
+                .insert({
+                    channel_id: channelId,
+                    role_id: roleId,
+                    ...DEFAULT_PERMISSIONS,
+                    [field]: value,
+                })
+                .select()
+                .single();
+
+            if (data) {
+                setPermissions((prev) => [...prev, data as ChannelPermission]);
+                return;
+            }
         }
 
         setPermissions((prev) =>
-            prev.map((p) => (p.role === role ? { ...p, [field]: value } : p))
+            prev.map((p) => (p.role_id === roleId ? { ...p, [field]: value } : p))
         );
     };
 
-    const getPermissionForRole = (role: "admin" | "moderator" | "member") => {
-        return permissions.find((p) => p.role === role) || { ...DEFAULT_PERMISSIONS, role, channel_id: channelId || "" };
+    const getPermissionForRole = (roleId: string): ChannelPermission => {
+        const existing = permissions.find((p) => p.role_id === roleId);
+        if (existing) return existing;
+        return { ...DEFAULT_PERMISSIONS, role_id: roleId, channel_id: channelId || "" };
     };
 
-    return { permissions, loading, error, updatePermission, getPermissionForRole, refetch: fetchPermissions };
+    return { permissions, roles, loading, error, updatePermission, getPermissionForRole, refetch: fetchData };
 }

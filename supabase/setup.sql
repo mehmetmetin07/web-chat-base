@@ -409,17 +409,21 @@ SELECT id FROM public.servers
 ON CONFLICT (server_id) DO NOTHING;
 
 -- =====================
--- 8. CHANNEL PERMISSIONS
+-- 8. CHANNEL PERMISSIONS (Role-Based)
 -- =====================
-CREATE TABLE IF NOT EXISTS public.channel_permissions (
+-- Drop old table if exists (migration)
+DROP TABLE IF EXISTS public.channel_permissions;
+
+CREATE TABLE public.channel_permissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   channel_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'moderator', 'member')),
+  role_id UUID REFERENCES public.server_roles(id) ON DELETE CASCADE,
   can_send BOOLEAN DEFAULT true,
   can_attach BOOLEAN DEFAULT true,
   can_mention BOOLEAN DEFAULT true,
   slowmode_seconds INT DEFAULT 0,
-  UNIQUE(channel_id, role)
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(channel_id, role_id)
 );
 
 ALTER TABLE public.channel_permissions ENABLE ROW LEVEL SECURITY;
@@ -437,7 +441,18 @@ CREATE POLICY "Server owners can manage permissions"
       JOIN public.servers s ON s.id = g.server_id
       WHERE s.owner_id = auth.uid()
     )
+    OR EXISTS (
+      SELECT 1 FROM public.server_member_roles smr
+      JOIN public.server_roles sr ON sr.id = smr.role_id
+      WHERE smr.user_id = auth.uid()
+        AND sr.server_id = (SELECT server_id FROM public.groups WHERE id = channel_permissions.channel_id)
+        AND sr.permissions->>'ADMINISTRATOR' = 'true'
+    )
   );
+
+CREATE INDEX IF NOT EXISTS idx_channel_permissions_channel ON public.channel_permissions(channel_id);
+CREATE INDEX IF NOT EXISTS idx_channel_permissions_role ON public.channel_permissions(role_id);
+
 
 -- =====================
 -- 9. STORAGE POLICIES
