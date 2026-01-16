@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServers } from "@/hooks/useServers";
 import { CreateServerModal } from "@/components/molecules/CreateServerModal";
@@ -49,24 +49,26 @@ export function ServerList({ selectedServerId, onSelectServer }: ServerListProps
                 ) : (
                     <>
                         {servers.map((server) => (
-                            <button
-                                key={server.id}
-                                onClick={() => onSelectServer(server.id)}
-                                className={cn(
-                                    "group relative h-12 w-12 rounded-full bg-gray-700 flex items-center justify-center text-white font-semibold transition-all hover:rounded-2xl hover:bg-blue-600",
-                                    selectedServerId === server.id && "rounded-2xl bg-blue-600"
-                                )}
-                            >
-                                {server.image_url ? (
-                                    <img src={server.image_url} alt={server.name} className="h-full w-full rounded-full object-cover" />
-                                ) : (
-                                    server.name.charAt(0).toUpperCase()
-                                )}
+                            <div key={server.id} className="group relative flex w-full justify-center">
                                 <div className={cn(
-                                    "absolute left-0 w-1 bg-white rounded-r transition-all",
-                                    selectedServerId === server.id ? "h-10" : "h-0 group-hover:h-5"
+                                    "absolute left-0 my-auto top-0 bottom-0 w-1 bg-white rounded-r transition-all",
+                                    selectedServerId === server.id ? "h-10" : "h-2 scale-0 group-hover:scale-100 group-hover:h-5"
                                 )} />
-                            </button>
+
+                                <button
+                                    onClick={() => onSelectServer(server.id)}
+                                    className={cn(
+                                        "group relative h-12 w-12 rounded-full bg-gray-700 flex items-center justify-center text-white font-semibold transition-all hover:rounded-2xl hover:bg-blue-600 overflow-hidden",
+                                        selectedServerId === server.id && "rounded-2xl bg-blue-600"
+                                    )}
+                                >
+                                    {server.image_url ? (
+                                        <img src={server.image_url} alt={server.name} className="h-full w-full object-cover" />
+                                    ) : (
+                                        server.name.charAt(0).toUpperCase()
+                                    )}
+                                </button>
+                            </div>
                         ))}
                     </>
                 )}
@@ -82,9 +84,10 @@ export function ServerList({ selectedServerId, onSelectServer }: ServerListProps
 
                 <button
                     onClick={() => setShowJoinModal(true)}
-                    className="h-12 w-12 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 text-xs transition-all hover:rounded-2xl hover:bg-gray-600"
+                    className="group h-12 w-12 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 transition-all hover:rounded-2xl hover:bg-green-600 hover:text-white"
+                    title="Explore & Join Servers"
                 >
-                    Join
+                    <Compass className="h-6 w-6 group-hover:animate-spin-slow" />
                 </button>
             </div>
 
