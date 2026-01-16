@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeft, Camera } from "lucide-react";
+import { ArrowLeft, Camera, Upload } from "lucide-react";
+
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/gif"];
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 
 export default function ProfilePage() {
     const router = useRouter();
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
@@ -47,6 +52,57 @@ export default function ProfilePage() {
 
         loadProfile();
     }, [router]);
+
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !userId) return;
+
+        if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+            setMessage({ type: "error", text: "Only JPG, PNG, and GIF files are allowed" });
+            return;
+        }
+
+        if (file.size > MAX_AVATAR_SIZE) {
+            setMessage({ type: "error", text: "File size must be less than 2MB" });
+            return;
+        }
+
+        setUploading(true);
+        setMessage(null);
+
+        const fileExt = file.name.split('.').pop()?.toLowerCase();
+        const fileName = `${userId}/avatar.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, file, { upsert: true });
+
+        if (uploadError) {
+            setMessage({ type: "error", text: "Upload failed: " + uploadError.message });
+            setUploading(false);
+            return;
+        }
+
+        const { data: urlData } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(fileName);
+
+        const newUrl = urlData.publicUrl + `?t=${Date.now()}`;
+        setAvatarUrl(newUrl);
+
+        const { error: updateError } = await supabase
+            .from("users")
+            .update({ avatar_url: newUrl })
+            .eq("id", userId);
+
+        if (updateError) {
+            setMessage({ type: "error", text: updateError.message });
+        } else {
+            setMessage({ type: "success", text: "Avatar updated!" });
+        }
+
+        setUploading(false);
+    };
 
     const handleSave = async () => {
         if (!userId) return;
@@ -99,16 +155,31 @@ export default function ProfilePage() {
                     <h1 className="text-2xl font-bold text-gray-900 mb-6">Profile Settings</h1>
 
                     <div className="flex items-center gap-6 mb-8">
-                        <div className="relative">
-                            <div className="h-24 w-24 rounded-full bg-blue-600 flex items-center justify-center text-white text-3xl font-bold">
+                        <div className="relative group">
+                            <div className="h-24 w-24 rounded-full bg-blue-600 flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
                                 {avatarUrl ? (
-                                    <img src={avatarUrl} alt="Avatar" className="h-full w-full rounded-full object-cover" />
+                                    <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
                                 ) : (
                                     (username || email).charAt(0).toUpperCase()
                                 )}
                             </div>
-                            <button className="absolute bottom-0 right-0 h-8 w-8 bg-gray-900 rounded-full flex items-center justify-center text-white hover:bg-gray-700">
-                                <Camera className="h-4 w-4" />
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.gif"
+                                onChange={handleAvatarUpload}
+                                className="hidden"
+                            />
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploading}
+                                className="absolute bottom-0 right-0 h-8 w-8 bg-gray-900 rounded-full flex items-center justify-center text-white hover:bg-gray-700 disabled:opacity-50"
+                            >
+                                {uploading ? (
+                                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Camera className="h-4 w-4" />
+                                )}
                             </button>
                         </div>
                         <div>
@@ -116,6 +187,7 @@ export default function ProfilePage() {
                                 {fullName || username || email.split("@")[0]}
                             </h2>
                             <p className="text-gray-500">{email}</p>
+                            <p className="text-xs text-gray-400 mt-1">Click camera icon to upload (JPG, PNG, GIF)</p>
                         </div>
                     </div>
 
@@ -147,7 +219,7 @@ export default function ProfilePage() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Avatar URL
+                                Avatar URL (or upload above)
                             </label>
                             <Input
                                 placeholder="https://example.com/avatar.jpg"
@@ -155,7 +227,7 @@ export default function ProfilePage() {
                                 onChange={(e) => setAvatarUrl(e.target.value)}
                             />
                             <p className="text-xs text-gray-500 mt-1">
-                                Paste a URL to your profile picture
+                                Paste a URL or use the upload button above
                             </p>
                         </div>
 

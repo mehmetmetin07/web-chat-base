@@ -581,6 +581,25 @@ ON storage.objects FOR UPDATE TO authenticated USING (
   bucket_id = 'server-icons'
 );
 
+-- Avatars bucket policies
+DROP POLICY IF EXISTS "Users can upload avatars" ON storage.objects;
+CREATE POLICY "Users can upload avatars"
+ON storage.objects FOR INSERT TO authenticated WITH CHECK (
+  bucket_id = 'avatars'
+);
+
+DROP POLICY IF EXISTS "Anyone can view avatars" ON storage.objects;
+CREATE POLICY "Anyone can view avatars"
+ON storage.objects FOR SELECT USING (
+  bucket_id = 'avatars'
+);
+
+DROP POLICY IF EXISTS "Users can update own avatar" ON storage.objects;
+CREATE POLICY "Users can update own avatar"
+ON storage.objects FOR UPDATE TO authenticated USING (
+  bucket_id = 'avatars'
+);
+
 -- =====================
 -- 10. ADVANCED ROLE SYSTEM
 -- =====================
