@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 import { useServerPermissions } from "@/hooks/useServerPermissions";
 import { usePresence } from "@/hooks/usePresence";
+import { ChannelSettingsModal } from "@/components/molecules/ChannelSettingsModal";
 
 type Server = Database["public"]["Tables"]["servers"]["Row"];
 
@@ -32,6 +33,8 @@ export function Sidebar({ className, server }: SidebarProps) {
     const [copied, setCopied] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
     const onlineUsers = usePresence(userId);
+    const [channelSettingsId, setChannelSettingsId] = useState<string | null>(null);
+    const [channelSettingsName, setChannelSettingsName] = useState<string>("");
 
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => {
@@ -146,17 +149,29 @@ export function Sidebar({ className, server }: SidebarProps) {
                             <div className="px-2 py-2 text-xs text-gray-400">No channels yet</div>
                         ) : (
                             channels.map((channel) => (
-                                <Link
-                                    key={channel.id}
-                                    href={`/servers/${server.id}/channels/${channel.id}`}
-                                    className={cn(
-                                        "flex items-center gap-2 rounded px-2 py-1.5 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-900",
-                                        pathname.includes(channel.id) && "bg-gray-300 text-gray-900"
+                                <div key={channel.id} className="group flex items-center justify-between pr-1">
+                                    <Link
+                                        href={`/servers/${server.id}/channels/${channel.id}`}
+                                        className={cn(
+                                            "flex-1 flex items-center gap-2 rounded px-2 py-1.5 text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-900",
+                                            pathname.includes(channel.id) && "bg-gray-300 text-gray-900"
+                                        )}
+                                    >
+                                        <Hash className="h-4 w-4 text-gray-500" />
+                                        {channel.name}
+                                    </Link>
+                                    {(isOwner || can("ADMINISTRATOR") || can("MANAGE_CHANNELS")) && (
+                                        <button
+                                            onClick={() => {
+                                                setChannelSettingsId(channel.id);
+                                                setChannelSettingsName(channel.name);
+                                            }}
+                                            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <Settings className="h-3.5 w-3.5" />
+                                        </button>
                                     )}
-                                >
-                                    <Hash className="h-4 w-4 text-gray-500" />
-                                    {channel.name}
-                                </Link>
+                                </div>
                             ))
                         )}
 
@@ -294,6 +309,16 @@ export function Sidebar({ className, server }: SidebarProps) {
                 onClose={() => setIsCreateChannelOpen(false)}
                 onSubmit={handleCreateChannel}
             />
+
+            {channelSettingsId && (
+                <ChannelSettingsModal
+                    isOpen={!!channelSettingsId}
+                    onClose={() => setChannelSettingsId(null)}
+                    channelId={channelSettingsId}
+                    channelName={channelSettingsName}
+                    serverId={server.id}
+                />
+            )}
         </>
     );
 }
