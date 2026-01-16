@@ -604,7 +604,9 @@ CREATE POLICY "Anyone can view server roles"
   ON public.server_roles FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Server owners can manage roles" ON public.server_roles;
-CREATE POLICY "Server owners can manage roles"
+DROP POLICY IF EXISTS "Authorized users can manage roles" ON public.server_roles;
+
+CREATE POLICY "Authorized users can manage roles"
   ON public.server_roles FOR ALL TO authenticated
   USING (
     server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())
@@ -627,7 +629,9 @@ CREATE POLICY "Anyone can view member roles"
   ON public.server_member_roles FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Server owners can manage member roles" ON public.server_member_roles;
-CREATE POLICY "Server owners can manage member roles"
+DROP POLICY IF EXISTS "Authorized users can manage member roles" ON public.server_member_roles;
+
+CREATE POLICY "Authorized users can manage member roles"
   ON public.server_member_roles FOR ALL TO authenticated
   USING (
     server_id IN (SELECT id FROM public.servers WHERE owner_id = auth.uid())

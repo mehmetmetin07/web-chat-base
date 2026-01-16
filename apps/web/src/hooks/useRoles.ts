@@ -56,16 +56,17 @@ export function useRoles(serverId: string) {
         };
     }, [serverId]);
 
-    const createRole = async (name: string, color: string = "#99aab5", isAdmin: boolean = false) => {
+    const createRole = async (name: string, color: string = "#99aab5", permissions: Record<string, boolean> = { SEND_MESSAGES: true }) => {
         try {
+            const maxPosition = roles.reduce((max, r) => Math.max(max, r.position ?? 0), 0);
             const { data, error } = await supabase
                 .from("server_roles")
                 .insert({
                     server_id: serverId,
                     name,
                     color,
-                    position: 0,
-                    permissions: { ADMINISTRATOR: isAdmin },
+                    position: maxPosition + 1,
+                    permissions,
                 })
                 .select()
                 .single();
