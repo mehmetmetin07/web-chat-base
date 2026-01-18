@@ -2,12 +2,12 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Hash, Settings } from "lucide-react";
+import { Hash, Settings, Volume2 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Database } from "@/types/supabase";
 
-type Channel = Database["public"]["Tables"]["groups"]["Row"];
+type Channel = Database["public"]["Tables"]["groups"]["Row"] & { type?: 'text' | 'voice' };
 
 interface SidebarChannelProps {
     channel: Channel;
@@ -55,7 +55,11 @@ export function SidebarChannel({ channel, isActive, serverId, canManage, onOpenS
                 )}
                 onClick={(e) => e.stopPropagation()}
             >
-                <Hash className="h-4 w-4 text-gray-500" />
+                {channel.type === 'voice' ? (
+                    <Volume2 className="h-4 w-4 text-gray-500" />
+                ) : (
+                    <Hash className="h-4 w-4 text-gray-500" />
+                )}
                 {channel.name}
             </Link>
             {canManage && (
