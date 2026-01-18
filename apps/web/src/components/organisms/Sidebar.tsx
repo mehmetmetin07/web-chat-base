@@ -66,6 +66,7 @@ interface SidebarProps {
 
 import { MemberContextMenu } from "@/components/molecules/MemberContextMenu";
 import { useRoles } from "@/hooks/useRoles";
+import { VoiceConnectionBar } from "@/components/organisms/VoiceConnectionBar";
 
 // ... (keep existing imports)
 
@@ -501,41 +502,45 @@ export function Sidebar({ className, server }: SidebarProps) {
                     </DndContext>
                 </div>
 
-                <div className="border-t p-3 bg-gray-200">
-                    {currentUserProfile && (
-                        <div className="flex items-center justify-between">
-                            <Link
-                                href="/profile"
-                                className="flex items-center gap-2 hover:opacity-80"
-                            >
-                                <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden">
-                                    {currentUserProfile.avatar_url ? (
-                                        <img
-                                            src={currentUserProfile.avatar_url}
-                                            alt={currentUserProfile.full_name || ""}
-                                            className="h-full w-full object-cover"
-                                        />
-                                    ) : (
-                                        (currentUserProfile.full_name?.[0] || currentUserProfile.email?.charAt(0) || "?").toUpperCase()
-                                    )}
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-gray-900 truncate max-w-[100px]">
-                                        {currentUserProfile.full_name || currentUserProfile.email?.split("@")[0]}
-                                    </span>
-                                    <span className="text-xs text-gray-500">Online</span>
-                                </div>
-                            </Link>
-                            <button
-                                onClick={handleLogout}
-                                className="rounded p-2 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
-                            >
-                                <LogOut className="h-4 w-4" />
-                            </button>
-                        </div>
-                    )}
-                </div>
             </div>
+
+            <VoiceConnectionBar />
+
+            <div className="border-t p-3 bg-gray-200">
+                {currentUserProfile && (
+                    <div className="flex items-center justify-between">
+                        <Link
+                            href="/profile"
+                            className="flex items-center gap-2 hover:opacity-80"
+                        >
+                            <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden">
+                                {currentUserProfile.avatar_url ? (
+                                    <img
+                                        src={currentUserProfile.avatar_url}
+                                        alt={currentUserProfile.full_name || ""}
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    (currentUserProfile.full_name?.[0] || currentUserProfile.email?.charAt(0) || "?").toUpperCase()
+                                )}
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-gray-900 truncate max-w-[100px]">
+                                    {currentUserProfile.full_name || currentUserProfile.email?.split("@")[0]}
+                                </span>
+                                <span className="text-xs text-gray-500">Online</span>
+                            </div>
+                        </Link>
+                        <button
+                            onClick={handleLogout}
+                            className="rounded p-2 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
+                        >
+                            <LogOut className="h-4 w-4" />
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div >
 
             <CreateChannelModal
                 isOpen={isCreateChannelOpen}
@@ -543,56 +548,60 @@ export function Sidebar({ className, server }: SidebarProps) {
                 onSubmit={handleCreateChannel}
             />
 
-            {channelSettingsId && (
-                <ChannelSettingsModal
-                    isOpen={!!channelSettingsId}
-                    onClose={() => setChannelSettingsId(null)}
-                    channelId={channelSettingsId}
-                    channelName={channelSettingsName}
-                    serverId={server.id}
-                />
-            )}
-
-            <CreateCategoryModal
-                isOpen={isCreateCategoryOpen}
-                onClose={() => setIsCreateCategoryOpen(false)}
-                onSubmit={async (name) => { await createCategory(name); }}
+    {
+        channelSettingsId && (
+            <ChannelSettingsModal
+                isOpen={!!channelSettingsId}
+                onClose={() => setChannelSettingsId(null)}
+                channelId={channelSettingsId}
+                channelName={channelSettingsName}
+                serverId={server.id}
             />
+        )
+    }
 
-            {contextMenu && (
-                // MemberContextMenu.tsx content update via multi-replace in Sidebar is tricky if file is different.
-                // Wait, I am editing Sidebar.tsx here.
-                // I need separate calls for Sidebar and MemberContextMenu.
-                // This call is for Sidebar.tsx.
-                <MemberContextMenu
-                    position={{ x: contextMenu.x, y: contextMenu.y }}
-                    onClose={() => setContextMenu(null)}
-                    member={contextMenu.member}
-                    roles={roles}
-                    canManageRoles={isOwner || can("ADMINISTRATOR") || can("MANAGE_ROLES")}
-                    canKick={isOwner || can("ADMINISTRATOR") || can("KICK_MEMBERS")}
-                    canBan={isOwner || can("ADMINISTRATOR") || can("BAN_MEMBERS")}
-                    myRolePosition={isOwner ? 999999 : (members?.find(m => m.id === currentUserId)?.highestRole?.position || 0)}
-                    onAssignRole={async (roleId) => {
-                        await assignRoleToMember(contextMenu.member.id, roleId);
-                    }}
-                    onRemoveRole={async (roleId) => {
-                        await removeRoleFromMember(contextMenu.member.id, roleId);
-                    }}
-                    onKick={async () => {
-                        if (confirm(`Are you sure you want to kick ${contextMenu.member.full_name}?`)) {
-                            await kickMember(contextMenu.member.id);
-                            setContextMenu(null);
-                        }
-                    }}
-                    onBan={async () => {
-                        if (confirm(`Are you sure you want to ban ${contextMenu.member.full_name}?`)) {
-                            await banMember(contextMenu.member.id);
-                            setContextMenu(null);
-                        }
-                    }}
-                />
-            )}
+    <CreateCategoryModal
+        isOpen={isCreateCategoryOpen}
+        onClose={() => setIsCreateCategoryOpen(false)}
+        onSubmit={async (name) => { await createCategory(name); }}
+    />
+
+    {
+        contextMenu && (
+            // MemberContextMenu.tsx content update via multi-replace in Sidebar is tricky if file is different.
+            // Wait, I am editing Sidebar.tsx here.
+            // I need separate calls for Sidebar and MemberContextMenu.
+            // This call is for Sidebar.tsx.
+            <MemberContextMenu
+                position={{ x: contextMenu.x, y: contextMenu.y }}
+                onClose={() => setContextMenu(null)}
+                member={contextMenu.member}
+                roles={roles}
+                canManageRoles={isOwner || can("ADMINISTRATOR") || can("MANAGE_ROLES")}
+                canKick={isOwner || can("ADMINISTRATOR") || can("KICK_MEMBERS")}
+                canBan={isOwner || can("ADMINISTRATOR") || can("BAN_MEMBERS")}
+                myRolePosition={isOwner ? 999999 : (members?.find(m => m.id === currentUserId)?.highestRole?.position || 0)}
+                onAssignRole={async (roleId) => {
+                    await assignRoleToMember(contextMenu.member.id, roleId);
+                }}
+                onRemoveRole={async (roleId) => {
+                    await removeRoleFromMember(contextMenu.member.id, roleId);
+                }}
+                onKick={async () => {
+                    if (confirm(`Are you sure you want to kick ${contextMenu.member.full_name}?`)) {
+                        await kickMember(contextMenu.member.id);
+                        setContextMenu(null);
+                    }
+                }}
+                onBan={async () => {
+                    if (confirm(`Are you sure you want to ban ${contextMenu.member.full_name}?`)) {
+                        await banMember(contextMenu.member.id);
+                        setContextMenu(null);
+                    }
+                }}
+            />
+        )
+    }
         </>
     );
 }

@@ -1,20 +1,10 @@
 "use client";
 
-import { useVoiceState } from "@/hooks/useVoiceState";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { useVoice } from "@/providers/VoiceProvider";
 import { Button } from "@/components/atoms/Button";
 import { Mic, MicOff, Headphones, LogOut } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-function AudioPlayer({ stream }: { stream: MediaStream }) {
-    const ref = useRef<HTMLAudioElement>(null);
-    useEffect(() => {
-        if (ref.current) {
-            ref.current.srcObject = stream;
-        }
-    }, [stream]);
-    return <audio ref={ref} autoPlay playsInline />;
-}
 
 interface VoiceRoomProps {
     channelId: string;
@@ -23,21 +13,15 @@ interface VoiceRoomProps {
 }
 
 export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) {
-    const { participants, isConnected, joinChannel, leaveChannel, toggleMute, myState } = useVoiceState(channelId, serverId);
+    const { participants, isConnected, joinVoiceChannel, leaveVoiceChannel, toggleMute, isMuted } = useVoice();
 
-    // Only initialize WebRTC if connected to the voice state
-    const { remoteStreams } = useWebRTC({
-        channelId: isConnected ? channelId : "", // Passing empty channelId prevents hook from running logic if not connected
-        userId: myState?.user_id || null,
-        isMicMuted: myState?.muted || false
-    });
+    // Check if we are connected to THIS channel
+    // If not, we show "Join" button.
+    // We can rely on isConnected and check ID, but here we just show Join if not connected.
 
     return (
         <div className="flex flex-col h-full bg-gray-800 text-white">
-            {/* Audio Players for Remote Streams */}
-            {Array.from(remoteStreams.entries()).map(([peerId, stream]) => (
-                <AudioPlayer key={peerId} stream={stream} />
-            ))}
+            {/* Audio Players are global now */}
 
             <div className="p-4 border-b border-gray-700 shadow-sm flex justify-between items-center">
                 <h2 className="text-xl font-bold flex items-center gap-2">
@@ -45,11 +29,11 @@ export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) 
                 </h2>
                 <div className="flex gap-2">
                     {isConnected ? (
-                        <Button variant="secondary" onClick={leaveChannel} className="flex items-center gap-2 border border-red-600 bg-red-600 text-white hover:bg-red-700">
+                        <Button variant="secondary" onClick={leaveVoiceChannel} className="flex items-center gap-2 border border-red-600 bg-red-600 text-white hover:bg-red-700">
                             <LogOut className="w-4 h-4" /> Disconnect
                         </Button>
                     ) : (
-                        <Button variant="primary" onClick={() => joinChannel()} className="bg-green-600 hover:bg-green-700 border-none text-white">
+                        <Button variant="primary" onClick={() => joinVoiceChannel(channelId, serverId)} className="bg-green-600 hover:bg-green-700 border-none text-white">
                             Join Voice
                         </Button>
                     )}
@@ -64,7 +48,7 @@ export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) 
                         </div>
                         <p className="text-lg">No one is here yet.</p>
                         {!isConnected && (
-                            <Button onClick={() => joinChannel()} variant="primary" className="bg-green-600 hover:bg-green-700 border-none text-white">
+                            <Button onClick={() => joinVoiceChannel(channelId, serverId)} variant="primary" className="bg-green-600 hover:bg-green-700 border-none text-white">
                                 Join Room
                             </Button>
                         )}
@@ -105,10 +89,10 @@ export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) 
                 <div className="p-4 bg-gray-900 border-t border-gray-800 flex justify-center gap-4">
                     <Button
                         variant="secondary"
-                        onClick={() => toggleMute(!myState?.muted)}
-                        className={`rounded-full p-4 h-16 w-16 flex items-center justify-center transition-all ${myState?.muted ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-900/20' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
+                        onClick={toggleMute}
+                        className={`rounded-full p-4 h-16 w-16 flex items-center justify-center transition-all ${isMuted ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-900/20' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
                     >
-                        {myState?.muted ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
+                        {isMuted ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
                     </Button>
                 </div>
             )}
