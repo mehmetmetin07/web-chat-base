@@ -12,7 +12,9 @@ export function useDM(otherUserId: string) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
     const [currentUserProfile, setCurrentUserProfile] = useState<Database["public"]["Tables"]["users"]["Row"] | null>(null);
+    const [otherUserProfile, setOtherUserProfile] = useState<Database["public"]["Tables"]["users"]["Row"] | null>(null);
 
     // Initial Fetch & Auth
     useEffect(() => {
@@ -27,13 +29,18 @@ export function useDM(otherUserId: string) {
                 return;
             }
 
-            // Fetch my profile for optimistic updates
-            const { data: myProfile } = await supabase
+            // Fetch profiles
+            const { data: profiles } = await supabase
                 .from("users")
                 .select("*")
-                .eq("id", myId)
-                .single();
-            setCurrentUserProfile(myProfile);
+                .in("id", [myId, otherUserId]);
+
+            if (profiles) {
+                const myProfile = profiles.find(u => u.id === myId) || null;
+                const otherProfile = profiles.find(u => u.id === otherUserId) || null;
+                setCurrentUserProfile(myProfile);
+                setOtherUserProfile(otherProfile);
+            }
 
             // Fetch messages
             const { data, error } = await supabase
@@ -67,45 +74,41 @@ export function useDM(otherUserId: string) {
                 },
                 async (payload) => {
                     const newMessage = payload.new as Database["public"]["Tables"]["messages"]["Row"];
-                    console.log("Realtime event received:", newMessage); // Debug log
 
-                    // Check if this message belongs to this conversation
+                    // Check if relevant
                     const isRelevant =
                         (newMessage.sender_id === currentUserId && newMessage.receiver_id === otherUserId) ||
                         (newMessage.sender_id === otherUserId && newMessage.receiver_id === currentUserId);
 
                     if (isRelevant) {
-                        // Avoid duplicates from optimistic updates
                         setMessages((prev) => {
                             if (prev.some(m => m.id === newMessage.id)) return prev;
 
-                            // If it's incoming (not from us), we might need to fetch user profile 
-                            // if it wasn't a standard 'select' fetch.
-                            // But wait, we can just append it and let the UI handle the sender info 
-                            // or do a quick fetch.
-                            return [...prev]; // Placeholder to trigger effect or logic below
-                        });
+                            // Attach user profile synchronously
+                            const senderProfile = newMessage.sender_id === currentUserId ? currentUserProfile : otherUserProfile;
 
-                        // We strictly verify sender before adding fully
-                        const { data: user } = await supabase
-                            .from("users")
-                            .select("*")
-                            .eq("id", newMessage.sender_id)
-                            .single();
+                            const msgWithUser = {
+                                ...newMessage,
+                                users: senderProfile
+                            };
 
-                        setMessages((prev) => {
-                            if (prev.some(m => m.id === newMessage.id)) return prev;
-
-                            // If we don't have user, we might want to fail gracefully or use partial data
-                            const msgWithUser = { ...newMessage, users: user };
                             return [...prev, msgWithUser as any];
                         });
-
-                        // NOTIFICATION / SOUND could go here
-                        if (newMessage.sender_id !== currentUserId) {
-                            // playSound() or similar if requested later
-                        }
                     }
+                }
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "messages",
+                },
+                (payload) => {
+                    const updatedMessage = payload.new as Message;
+                    setMessages((prev) => prev.map((m) =>
+                        m.id === updatedMessage.id ? { ...m, ...updatedMessage, users: m.users } : m
+                    ));
                 }
             )
             .on(
@@ -126,7 +129,7 @@ export function useDM(otherUserId: string) {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [otherUserId, currentUserId]);
+    }, [otherUserId, currentUserId, currentUserProfile, otherUserProfile]);
 
     const sendMessage = async (content: string, type: "text" | "image" | "file" | "video" = "text") => {
         if (!currentUserId || !otherUserId) return;
@@ -169,5 +172,13 @@ export function useDM(otherUserId: string) {
         await supabase.from("messages").delete().eq("id", messageId);
     };
 
-    return { messages, loading, sendMessage, currentUserId, deleteMessage };
+    return {
+        messages,
+        loading,
+        sendMessage,
+        currentUserId,
+        deleteMessage,
+        currentUserProfile,
+        otherUserProfile
+    };
 }

@@ -35,9 +35,16 @@ function MessageSkeleton() {
 }
 
 export function DMChatArea({ userId }: { userId: string }) {
-    const { messages, loading, sendMessage, currentUserId, deleteMessage } = useDM(userId);
+    const {
+        messages,
+        loading,
+        sendMessage,
+        currentUserId,
+        deleteMessage,
+        currentUserProfile: currentUser,
+        otherUserProfile: otherUser
+    } = useDM(userId);
     const [newMessage, setNewMessage] = useState("");
-    const [otherUser, setOtherUser] = useState<User | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Features state
@@ -45,19 +52,9 @@ export function DMChatArea({ userId }: { userId: string }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { uploadFile, uploading: isUploading, error: uploadError } = useFileUpload(null); // Pass null for DM
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (currentUserId) {
-            supabase
-                .from("users")
-                .select("*")
-                .eq("id", currentUserId)
-                .single()
-                .then(({ data }) => setCurrentUser(data));
-        }
-    }, [currentUserId]);
+
 
     const currentUsername = currentUser?.full_name || currentUser?.email?.split("@")[0] || "Unknown";
     const dmChannelId = currentUserId && userId
@@ -66,16 +63,7 @@ export function DMChatArea({ userId }: { userId: string }) {
 
     const { typingUsers, sendTyping } = useTypingIndicator(dmChannelId, currentUserId, currentUsername);
 
-    useEffect(() => {
-        if (userId) {
-            supabase
-                .from("users")
-                .select("*")
-                .eq("id", userId)
-                .single()
-                .then(({ data }) => setOtherUser(data));
-        }
-    }, [userId]);
+
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
