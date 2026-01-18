@@ -909,3 +909,69 @@ BEGIN
 END;
 $$;
 
+-- =====================
+-- 9. NOTIFICATIONS SYSTEM
+-- =====================
+
+-- Add mentions column to messages
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS mentions UUID[] DEFAULT '{}';
+
+-- Create Notifications Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES public.users(id) ON DELETE CASCADE, -- Who triggered it
+  type TEXT NOT NULL CHECK (type IN ('mention', 'reply', 'system')),
+  message_id UUID REFERENCES public.messages(id) ON DELETE CASCADE,
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  channel_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
+CREATE POLICY "Users can view own notifications"
+  ON public.notifications FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+CREATE POLICY "Users can update own notifications"
+  ON public.notifications FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id);
+
+-- Trigger to create notification on mention
+CREATE OR REPLACE FUNCTION public.handle_message_mentions()
+RETURNS TRIGGER AS $$
+DECLARE
+  mentioned_user_id UUID;
+BEGIN
+  -- If mentions array is not empty
+  IF NEW.mentions IS NOT NULL AND array_length(NEW.mentions, 1) > 0 THEN
+    FOREACH mentioned_user_id IN ARRAY NEW.mentions
+    LOOP
+      -- Don't notify self
+      IF mentioned_user_id != NEW.sender_id THEN
+        INSERT INTO public.notifications (user_id, actor_id, type, message_id, server_id, channel_id)
+        SELECT 
+           mentioned_user_id, 
+           NEW.sender_id, 
+           'mention', 
+           NEW.id, 
+           groups.server_id, 
+           NEW.group_id
+        FROM public.groups 
+        WHERE groups.id = NEW.group_id;
+      END IF;
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_message_created_notify ON public.messages;
+CREATE TRIGGER on_message_created_notify
+  AFTER INSERT ON public.messages
+  FOR EACH ROW EXECUTE FUNCTION public.handle_message_mentions();
+

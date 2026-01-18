@@ -104,7 +104,26 @@ export function ChatArea({ channelId }: { channelId: string }) {
             return;
         }
 
-        await sendMessage(newMessage, userId);
+        // Parse mentions
+        const mentionRegex = /@([a-zA-Z0-9_\.\-]+)/g;
+        const matches = newMessage.match(mentionRegex);
+        const mentionedUserIds: string[] = [];
+
+        if (matches) {
+            matches.forEach(match => {
+                const username = match.substring(1).toLowerCase(); // remove @
+                const member = members.find(m =>
+                    (m.full_name?.toLowerCase().replace(/\s+/g, '') === username) ||
+                    (m.email?.split('@')[0].toLowerCase() === username) ||
+                    (m.username?.toLowerCase() === username)
+                );
+                if (member) {
+                    mentionedUserIds.push(member.id);
+                }
+            });
+        }
+
+        await sendMessage(newMessage, userId, mentionedUserIds);
         setNewMessage("");
         setShowEmoji(false);
     };

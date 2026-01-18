@@ -110,7 +110,7 @@ export function useChat(channelId: string) {
         };
     }, [channelId]);
 
-    const sendMessage = useCallback(async (content: string, senderId: string) => {
+    const sendMessage = useCallback(async (content: string, senderId: string, mentions?: string[]) => {
         const tempId = `temp-${Date.now()}`;
         const optimisticMessage: Message = {
             id: tempId,
@@ -132,6 +132,7 @@ export function useChat(channelId: string) {
                 sender_id: senderId,
                 group_id: channelId,
                 type: "text",
+                mentions: mentions || []
             })
             .select()
             .single();
