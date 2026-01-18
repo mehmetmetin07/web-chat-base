@@ -38,6 +38,32 @@ type Permissions = {
 
 // Removed local Role type definition as we are importing it from useRoles
 
+const ROLE_TEMPLATES = [
+    {
+        name: "Administrator",
+        color: "#3498db", // Blue
+        permissions: { ADMINISTRATOR: true } as Permissions,
+        icon: Shield,
+    },
+    {
+        name: "Moderator",
+        color: "#2ecc71", // Green
+        permissions: {
+            KICK_MEMBERS: true,
+            BAN_MEMBERS: true,
+            MODERATE_MEMBERS: true,
+            MANAGE_CHANNELS: false
+        } as Permissions,
+        icon: Shield,
+    },
+    {
+        name: "VIP",
+        color: "#f1c40f", // Gold
+        permissions: { SEND_MESSAGES: true } as Permissions,
+        icon: Shield,
+    }
+];
+
 function SortableRoleItem({ role, onEdit, onDelete }: { role: Role; onEdit: (role: Role) => void; onDelete: (id: string, name: string) => void }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: role.id });
 
@@ -131,6 +157,18 @@ export function RoleManagement({ serverId }: { serverId: string }) {
         }
     };
 
+
+    const [showTemplates, setShowTemplates] = useState(false);
+
+    const handleCreateTemplate = async (template: typeof ROLE_TEMPLATES[0]) => {
+        try {
+            await createRole(template.name, template.color, template.permissions as any);
+            setShowTemplates(false);
+        } catch (error) {
+            console.error("Error creating template role:", error);
+        }
+    };
+
     const handleOpenCreate = () => {
         setModalMode("create");
         setEditingRole(null);
@@ -168,15 +206,61 @@ export function RoleManagement({ serverId }: { serverId: string }) {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <Shield className="h-5 w-5" />
-                    Roles
-                </h2>
-                <Button onClick={handleOpenCreate}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Create Role
-                </Button>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-1">
+                        <Shield className="h-6 w-6 text-indigo-400" />
+                        Roles
+                    </h2>
+                    <p className="text-gray-400 text-sm">Manage server roles and permissions</p>
+                </div>
+
+                <div className="flex gap-2 relative">
+                    <div className="relative">
+                        <Button
+                            variant="secondary"
+                            onClick={() => setShowTemplates(!showTemplates)}
+                            className="bg-[#2b2d31] hover:bg-[#35373c] text-gray-200 border border-[#1e1f22]"
+                        >
+                            <Shield className="w-4 h-4 mr-2" />
+                            Templates
+                        </Button>
+
+                        {showTemplates && (
+                            <div className="absolute top-full right-0 mt-2 w-56 bg-[#1e1f22] rounded-lg shadow-xl border border-gray-800 overflow-hidden z-50">
+                                <div className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    Quick Create
+                                </div>
+                                {ROLE_TEMPLATES.map((template) => (
+                                    <button
+                                        key={template.name}
+                                        onClick={() => handleCreateTemplate(template)}
+                                        className="w-full flex items-center px-4 py-3 hover:bg-[#2b2d31] text-left transition-colors border-b border-gray-800 last:border-0"
+                                    >
+                                        <div
+                                            className="w-3 h-3 rounded-full mr-3 shadow-sm"
+                                            style={{ backgroundColor: template.color }}
+                                        />
+                                        <div>
+                                            <div className="text-gray-200 text-sm font-medium">{template.name}</div>
+                                            <div className="text-gray-500 text-xs">
+                                                {Object.keys(template.permissions).length > 0 ?
+                                                    (template.permissions as any).ADMINISTRATOR ? "Administrator access" :
+                                                        `${Object.keys(template.permissions).length} permissions`
+                                                    : "Cosmetic role"}
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <Button onClick={handleOpenCreate} className="bg-indigo-500 hover:bg-indigo-600">
+                        <Plus className="h-4 w-4 mr-1" />
+                        Create Role
+                    </Button>
+                </div>
             </div>
 
             <DndContext
