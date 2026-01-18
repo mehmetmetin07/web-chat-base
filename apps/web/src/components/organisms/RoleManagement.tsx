@@ -34,6 +34,7 @@ type Permissions = {
     BAN_MEMBERS?: boolean;
     MODERATE_MEMBERS?: boolean;
     SEND_MESSAGES?: boolean;
+    CREATE_INSTANT_INVITE?: boolean;
 };
 
 // Removed local Role type definition as we are importing it from useRoles

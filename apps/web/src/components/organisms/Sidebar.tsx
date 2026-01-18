@@ -247,7 +247,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                     )}
                 </div>
 
-                {(isOwner || can("ADMINISTRATOR") || can("MANAGE_SERVER")) && (
+                {(isOwner || can("ADMINISTRATOR") || can("MANAGE_SERVER") || can("CREATE_INSTANT_INVITE")) && (
                     <button
                         onClick={() => setShowInvite(!showInvite)}
                         className="flex items-center justify-between px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm border-b"
@@ -560,10 +560,10 @@ export function Sidebar({ className, server }: SidebarProps) {
             />
 
             {contextMenu && (
-// MemberContextMenu.tsx content update via multi-replace in Sidebar is tricky if file is different.
-// Wait, I am editing Sidebar.tsx here.
-// I need separate calls for Sidebar and MemberContextMenu.
-// This call is for Sidebar.tsx.
+                // MemberContextMenu.tsx content update via multi-replace in Sidebar is tricky if file is different.
+                // Wait, I am editing Sidebar.tsx here.
+                // I need separate calls for Sidebar and MemberContextMenu.
+                // This call is for Sidebar.tsx.
                 <MemberContextMenu
                     position={{ x: contextMenu.x, y: contextMenu.y }}
                     onClose={() => setContextMenu(null)}
@@ -572,7 +572,7 @@ export function Sidebar({ className, server }: SidebarProps) {
                     canManageRoles={isOwner || can("ADMINISTRATOR") || can("MANAGE_ROLES")}
                     canKick={isOwner || can("ADMINISTRATOR") || can("KICK_MEMBERS")}
                     canBan={isOwner || can("ADMINISTRATOR") || can("BAN_MEMBERS")}
-                    myRolePosition={isOwner ? 999999 : (members?.find(m => m.user_id === userId)?.highestRole?.position || 0)}
+                    myRolePosition={isOwner ? 999999 : (members?.find(m => m.id === currentUserId)?.highestRole?.position || 0)}
                     onAssignRole={async (roleId) => {
                         await assignRoleToMember(contextMenu.member.id, roleId);
                     }}

@@ -14,6 +14,7 @@ type Permissions = {
     BAN_MEMBERS?: boolean;
     MODERATE_MEMBERS?: boolean;
     SEND_MESSAGES?: boolean;
+    CREATE_INSTANT_INVITE?: boolean;
 };
 
 interface RoleModalProps {
@@ -33,6 +34,7 @@ const PERMISSION_OPTIONS: { key: keyof Permissions; label: string; description: 
     { key: "BAN_MEMBERS", label: "Ban Members", description: "Permanently ban members", icon: <Ban className="h-4 w-4" /> },
     { key: "MODERATE_MEMBERS", label: "Moderate Members", description: "Mute and timeout members", icon: <Volume2 className="h-4 w-4" /> },
     { key: "SEND_MESSAGES", label: "Send Messages", description: "Send messages in channels", icon: <MessageSquare className="h-4 w-4" /> },
+    { key: "CREATE_INSTANT_INVITE", label: "Create Invites", description: "Create invite links for the server", icon: <Users className="h-4 w-4" /> },
 ];
 
 const COLOR_PRESETS = [
@@ -57,7 +59,7 @@ export function RoleModal({ isOpen, onClose, onSave, initialData, mode }: RoleMo
         } else if (isOpen && mode === "create") {
             setName("");
             setColor("#99aab5");
-            setPermissions({ SEND_MESSAGES: true });
+            setPermissions({ SEND_MESSAGES: true, CREATE_INSTANT_INVITE: true });
         }
     }, [isOpen, initialData, mode]);
 
@@ -76,7 +78,7 @@ export function RoleModal({ isOpen, onClose, onSave, initialData, mode }: RoleMo
                 PERMISSION_OPTIONS.forEach((p) => (allPerms[p.key] = true));
                 setPermissions(allPerms);
             } else {
-                setPermissions({ SEND_MESSAGES: true });
+                setPermissions({ SEND_MESSAGES: true, CREATE_INSTANT_INVITE: true });
             }
         } else {
             setPermissions((prev) => ({ ...prev, [key]: !prev[key] }));

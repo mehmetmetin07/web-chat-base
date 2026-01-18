@@ -690,7 +690,7 @@ BEGIN
 
   -- Create Member Role (lowest pos)
   INSERT INTO public.server_roles (server_id, name, color, position, permissions)
-  VALUES (NEW.id, 'Member', '#99aab5', 0, '{"SEND_MESSAGES": true}')
+  VALUES (NEW.id, 'Member', '#99aab5', 0, '{"SEND_MESSAGES": true, "CREATE_INSTANT_INVITE": true}')
   RETURNING id INTO member_role_id;
 
   -- Assign Owner Role to the creator
