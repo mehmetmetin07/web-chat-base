@@ -853,3 +853,59 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.server_member_roles;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.server_roles;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.groups;
 
+
+-- =====================
+-- 8. SEARCH FUNCTIONALITY
+-- =====================
+
+-- Enable pg_trgm for efficient LIKE/ILIKE searches
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Index for message content
+CREATE INDEX IF NOT EXISTS idx_messages_content_trgm ON public.messages USING gin (content gin_trgm_ops);
+
+-- Search Messages Function (RPC)
+CREATE OR REPLACE FUNCTION public.search_messages(
+  search_query TEXT,
+  p_server_id UUID DEFAULT NULL,
+  p_channel_id UUID DEFAULT NULL,
+  limit_val INT DEFAULT 20
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  created_at TIMESTAMPTZ,
+  channel_id UUID,
+  channel_name TEXT,
+  server_id UUID,
+  user_id UUID,
+  user_full_name TEXT,
+  user_avatar_url TEXT
+)
+LANGUAGE plpgsql
+SECURITY INVOKER -- Respects RLS of the invoking user
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    m.id,
+    m.content,
+    m.created_at,
+    m.group_id as channel_id,
+    g.name as channel_name,
+    g.server_id,
+    m.sender_id as user_id,
+    u.full_name as user_full_name,
+    u.avatar_url as user_avatar_url
+  FROM public.messages m
+  JOIN public.users u ON m.sender_id = u.id
+  JOIN public.groups g ON m.group_id = g.id
+  WHERE
+    m.content ILIKE '%' || search_query || '%'
+    AND (p_server_id IS NULL OR g.server_id = p_server_id)
+    AND (p_channel_id IS NULL OR m.group_id = p_channel_id)
+  ORDER BY m.created_at DESC
+  LIMIT limit_val;
+END;
+$$;
+

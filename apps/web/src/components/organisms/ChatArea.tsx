@@ -14,7 +14,8 @@ import { FileMessage } from "@/components/molecules/FileMessage";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { TypingIndicator } from "@/components/molecules/TypingIndicator";
 import { ConfirmModal } from "@/components/molecules/ConfirmModal";
-import { Trash2 } from "lucide-react";
+import { Trash2, Search } from "lucide-react";
+import { useMessageSearch } from "@/hooks/useMessageSearch";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -72,6 +73,11 @@ export function ChatArea({ channelId }: { channelId: string }) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Search Hook
+    const { results: searchResults, isLoading: searchLoading, searchMessages, clearSearch } = useMessageSearch();
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showSearch, setShowSearch] = useState(false);
 
     const currentMember = members.find((m) => m.id === userId);
     const currentUsername = currentMember?.full_name || currentMember?.email?.split("@")[0] || "Unknown";
@@ -184,13 +190,73 @@ export function ChatArea({ channelId }: { channelId: string }) {
         <div className="flex h-full flex-1 flex-col bg-white relative" onPaste={handlePaste}>
             <div className="flex h-14 items-center justify-between border-b px-4">
                 <div className="font-medium"># {channelId.slice(0, 8)}...</div>
-                <button
-                    onClick={() => setShowMembers(!showMembers)}
-                    className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-                >
-                    <Users className="h-4 w-4" />
-                    {members.length}
-                </button>
+
+                <div className="flex items-center gap-3">
+                    {/* Search Bar */}
+                    <div className="relative">
+                        <div className={`flex items-center transition-all ${showSearch ? 'w-64 bg-gray-100 px-2 rounded-md' : 'w-8'}`}>
+                            {showSearch && (
+                                <Input
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && searchMessages(searchQuery, serverId || undefined, channelId)}
+                                    className="border-none bg-transparent h-8 text-sm focus:ring-0 placeholder:text-gray-400"
+                                    placeholder={`Search in #${channelId.slice(0, 8)}...`}
+                                    autoFocus
+                                />
+                            )}
+                            <button onClick={() => {
+                                setShowSearch(!showSearch);
+                                if (showSearch) {
+                                    setSearchQuery("");
+                                    clearSearch();
+                                }
+                            }} className="p-1 text-gray-500 hover:text-gray-700">
+                                {showSearch ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+                            </button>
+                        </div>
+
+                        {/* Search Results Popover */}
+                        {showSearch && (searchLoading || searchResults.length > 0 || searchQuery) && (
+                            <div className="absolute top-10 right-0 w-80 bg-white shadow-xl border rounded-lg z-50 max-h-96 overflow-y-auto">
+                                {searchLoading && <div className="p-4 text-center text-gray-500 text-sm flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Searching...</div>}
+
+                                {!searchLoading && searchResults.length === 0 && searchQuery && (
+                                    <div className="p-4 text-center text-gray-400 text-sm">No results found.</div>
+                                )}
+
+                                {searchResults.map((res) => (
+                                    <div key={res.id} className="p-3 border-b hover:bg-gray-50 cursor-pointer flex gap-3 text-left">
+                                        <div className="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+                                            {res.user_avatar_url ? (
+                                                <img src={res.user_avatar_url} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-500">
+                                                    {(res.user_full_name?.[0] || "?").toUpperCase()}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-baseline mb-0.5">
+                                                <span className="font-medium text-xs truncate">{res.user_full_name}</span>
+                                                <span className="text-[10px] text-gray-400">{formatTime(res.created_at)}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-700 line-clamp-2 break-all">{res.content}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => setShowMembers(!showMembers)}
+                        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                    >
+                        <Users className="h-4 w-4" />
+                        {members.length}
+                    </button>
+                </div>
             </div>
 
             {showMembers && (
