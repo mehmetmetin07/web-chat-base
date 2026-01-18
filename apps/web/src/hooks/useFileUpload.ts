@@ -19,6 +19,10 @@ export function useFileUpload(serverId: string | null) {
         setUploading(true);
         setError(null);
         setProgress(0);
+        if (!await validateFile(file, [])) {
+            setUploading(false);
+            return null;
+        }
 
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -70,9 +74,9 @@ export function useFileUpload(serverId: string | null) {
             return false;
         }
 
-        const maxSize = 10 * 1024 * 1024;
+        const maxSize = 50 * 1024 * 1024; // 50MB
         if (file.size > maxSize) {
-            setError("File size must be less than 10MB");
+            setError("File size must be less than 50MB");
             return false;
         }
 

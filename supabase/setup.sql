@@ -466,9 +466,12 @@ CREATE INDEX IF NOT EXISTS idx_channel_permissions_role ON public.channel_permis
 -- =====================
 -- 9. STORAGE POLICIES
 -- =====================
--- Ensure storage schema exists (it usually does by default in Supabase)
--- We cannot create buckets via SQL in standard Supabase easily without extensions, 
--- but we can set policies. Assuming 'chat-files' bucket exists.
+-- Ensure storage schema exists and buckets are created
+INSERT INTO storage.buckets (id, name, public) VALUES ('chat-files', 'chat-files', true) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('server-icons', 'server-icons', true) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO NOTHING;
+
+-- Policies assuming buckets exist
 
 DROP POLICY IF EXISTS "Authenticated users can upload chat files" ON storage.objects;
 CREATE POLICY "Authenticated users can upload chat files"
