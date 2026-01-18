@@ -1,8 +1,20 @@
 "use client";
 
 import { useVoiceState } from "@/hooks/useVoiceState";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import { Button } from "@/components/atoms/Button";
 import { Mic, MicOff, Headphones, LogOut } from "lucide-react";
+import { useEffect, useRef } from "react";
+
+function AudioPlayer({ stream }: { stream: MediaStream }) {
+    const ref = useRef<HTMLAudioElement>(null);
+    useEffect(() => {
+        if (ref.current) {
+            ref.current.srcObject = stream;
+        }
+    }, [stream]);
+    return <audio ref={ref} autoPlay playsInline />;
+}
 
 interface VoiceRoomProps {
     channelId: string;
@@ -13,15 +25,27 @@ interface VoiceRoomProps {
 export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) {
     const { participants, isConnected, joinChannel, leaveChannel, toggleMute, myState } = useVoiceState(channelId, serverId);
 
+    // Only initialize WebRTC if connected to the voice state
+    const { remoteStreams } = useWebRTC({
+        channelId: isConnected ? channelId : "", // Passing empty channelId prevents hook from running logic if not connected
+        userId: myState?.user_id || null,
+        isMicMuted: myState?.muted || false
+    });
+
     return (
         <div className="flex flex-col h-full bg-gray-800 text-white">
+            {/* Audio Players for Remote Streams */}
+            {Array.from(remoteStreams.entries()).map(([peerId, stream]) => (
+                <AudioPlayer key={peerId} stream={stream} />
+            ))}
+
             <div className="p-4 border-b border-gray-700 shadow-sm flex justify-between items-center">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                     <span className="text-gray-400">🔊</span> {channelName}
                 </h2>
                 <div className="flex gap-2">
                     {isConnected ? (
-                        <Button variant="danger" onClick={leaveChannel} className="flex items-center gap-2 border-red-600 text-red-100 hover:bg-red-900/50">
+                        <Button variant="secondary" onClick={leaveChannel} className="flex items-center gap-2 border border-red-600 bg-red-600 text-white hover:bg-red-700">
                             <LogOut className="w-4 h-4" /> Disconnect
                         </Button>
                     ) : (
