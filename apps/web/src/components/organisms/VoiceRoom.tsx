@@ -2,9 +2,18 @@
 
 import { useVoice } from "@/providers/VoiceProvider";
 import { Button } from "@/components/atoms/Button";
-import { Mic, MicOff, Headphones, LogOut } from "lucide-react";
+import { Mic, MicOff, Headphones, LogOut, Video, VideoOff } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+function VideoPlayer({ stream }: { stream: MediaStream }) {
+    const ref = useRef<HTMLVideoElement>(null);
+    useEffect(() => {
+        if (ref.current) {
+            ref.current.srcObject = stream;
+        }
+    }, [stream]);
+    return <video ref={ref} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />;
+}
 
 interface VoiceRoomProps {
     channelId: string;
@@ -13,16 +22,19 @@ interface VoiceRoomProps {
 }
 
 export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) {
-    const { participants, isConnected, joinVoiceChannel, leaveVoiceChannel, toggleMute, isMuted } = useVoice();
+    const { participants, isConnected, joinVoiceChannel, leaveVoiceChannel, toggleMute, isMuted, toggleVideo, isVideoEnabled, localStream, remoteStreams, userId: myUserId } = useVoice();
+
+    // Helper to get stream for a participant
+    const getStream = (userId: string) => {
+        if (userId === myUserId) {
+            return localStream;
+        }
+        return remoteStreams.get(userId);
+    };
 
     // Check if we are connected to THIS channel
-    // If not, we show "Join" button.
-    // We can rely on isConnected and check ID, but here we just show Join if not connected.
-
     return (
         <div className="flex flex-col h-full bg-gray-800 text-white">
-            {/* Audio Players are global now */}
-
             <div className="p-4 border-b border-gray-700 shadow-sm flex justify-between items-center">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                     <span className="text-gray-400">🔊</span> {channelName}
@@ -54,39 +66,65 @@ export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) 
                         )}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {participants.map((p) => (
-                            <div key={p.id} className="bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center gap-3 relative shadow-lg ring-1 ring-white/5 transition-all hover:ring-white/10">
-                                <div className={`relative ${p.muted ? 'opacity-75' : ''}`}>
-                                    <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center bg-gray-500 text-2xl font-bold text-white overflow-hidden ${p.muted ? 'border-red-500' : 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.5)]'}`}>
-                                        {p.users?.avatar_url ? (
-                                            <img
-                                                src={p.users.avatar_url}
-                                                alt={p.users.full_name || ""}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            (p.users?.full_name?.[0] || p.users?.email?.[0] || "?").toUpperCase()
-                                        )}
-                                    </div>
-                                    {p.muted && (
-                                        <div className="absolute bottom-0 right-0 bg-red-600 rounded-full p-1.5 border-2 border-gray-700">
-                                            <MicOff className="w-3.5 h-3.5 text-white" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {participants.map((p) => {
+                            const isMe = p.user_id === myUserId;
+                            const stream = isMe ? localStream : remoteStreams.get(p.user_id);
+                            const hasVideo = stream && stream.getVideoTracks().length > 0;
+
+                            return (
+                                <div key={p.id} className="bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center gap-3 relative shadow-lg ring-1 ring-white/5 transition-all hover:ring-white/10 overflow-hidden aspect-video">
+                                    {/* Video Layer */}
+                                    {hasVideo ? (
+                                        <div className="absolute inset-0 z-0 bg-black">
+                                            <VideoPlayer stream={stream!} />
+                                        </div>
+                                    ) : null}
+
+                                    {/* Avatar Layer - Show if NO video */}
+                                    {!hasVideo && (
+                                        <div className={`relative z-10 ${p.muted ? 'opacity-75' : ''}`}>
+                                            <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center bg-gray-500 text-2xl font-bold text-white overflow-hidden ${p.muted ? 'border-red-500' : 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.5)]'}`}>
+                                                {p.users?.avatar_url ? (
+                                                    <img
+                                                        src={p.users.avatar_url}
+                                                        alt={p.users.full_name || ""}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    (p.users?.full_name?.[0] || p.users?.email?.[0] || "?").toUpperCase()
+                                                )}
+                                            </div>
+                                            {p.muted && (
+                                                <div className="absolute bottom-0 right-0 bg-red-600 rounded-full p-1.5 border-2 border-gray-700">
+                                                    <MicOff className="w-3.5 h-3.5 text-white" />
+                                                </div>
+                                            )}
                                         </div>
                                     )}
+
+                                    <div className="text-center w-full z-10 relative bg-black/50 p-1 rounded backdrop-blur-sm mt-auto">
+                                        <h3 className="font-semibold truncate w-full px-2 text-white text-sm text-shadow">
+                                            {isMe ? "Me" : (p.users?.full_name || p.users?.email?.split('@')[0])}
+                                        </h3>
+                                    </div>
                                 </div>
-                                <div className="text-center w-full">
-                                    <h3 className="font-semibold truncate w-full px-2">{p.users?.full_name || p.users?.email?.split('@')[0]}</h3>
-                                    <p className="text-xs text-gray-400 mt-1">{p.muted ? "Muted" : "Connected"}</p>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
 
             {isConnected && (
                 <div className="p-4 bg-gray-900 border-t border-gray-800 flex justify-center gap-4">
+                    <Button
+                        variant="secondary"
+                        onClick={toggleVideo}
+                        className={`rounded-full p-4 h-16 w-16 flex items-center justify-center transition-all ${isVideoEnabled ? 'bg-white text-gray-900 hover:bg-gray-200' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
+                        title={isVideoEnabled ? "Turn Off Camera" : "Turn On Camera"}
+                    >
+                        {isVideoEnabled ? <Video className="w-8 h-8" /> : <VideoOff className="w-8 h-8" />}
+                    </Button>
                     <Button
                         variant="secondary"
                         onClick={toggleMute}

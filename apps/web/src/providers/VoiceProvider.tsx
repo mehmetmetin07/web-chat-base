@@ -18,6 +18,7 @@ interface VoiceContextType {
     toggleVideo: () => Promise<void>;
     isVideoEnabled: boolean;
     localStream: MediaStream | null;
+    userId: string | null;
 }
 
 const VoiceContext = createContext<VoiceContextType | null>(null);
@@ -104,7 +105,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             activeChannelName,
             toggleVideo,
             isVideoEnabled,
-            localStream
+            localStream,
+            userId: voiceState.myState?.user_id || null
         }}>
             {children}
             {/* Render Audio Elements Globally */}
