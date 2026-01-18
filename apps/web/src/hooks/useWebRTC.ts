@@ -192,154 +192,154 @@ export function useWebRTC({ channelId, userId, isMicMuted }: UseWebRTCProps) {
         return pc;
     };
 
-};
 
-// Helper to stop video tracks
-const stopVideoTracks = () => {
-    if (localStreamRef.current) {
-        localStreamRef.current.getVideoTracks().forEach(track => {
-            track.stop();
-            localStreamRef.current!.removeTrack(track);
-        });
-        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-    }
 
-    peerConnections.current.forEach(pc => {
-        const senders = pc.getSenders();
-        const videoSender = senders.find(s => s.track?.kind === 'video');
-        if (videoSender) {
-            pc.removeTrack(videoSender);
-        }
-    });
-};
-
-// Helper to add video track
-const addVideoTrack = (track: MediaStreamTrack) => {
-    if (localStreamRef.current) {
-        localStreamRef.current.addTrack(track);
-        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-    }
-
-    peerConnections.current.forEach(pc => {
+    // Helper to stop video tracks
+    const stopVideoTracks = () => {
         if (localStreamRef.current) {
-            pc.addTrack(track, localStreamRef.current);
-        }
-    });
-};
-
-const toggleVideo = async () => {
-    if (isVideoEnabled) {
-        stopVideoTracks();
-        setIsVideoEnabled(false);
-        renegotiateAll();
-    } else {
-        // If screen sharing is on, turn it off
-        if (isScreenSharing) {
-            stopVideoTracks();
-            setIsScreenSharing(false);
+            localStreamRef.current.getVideoTracks().forEach(track => {
+                track.stop();
+                localStreamRef.current!.removeTrack(track);
+            });
+            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
         }
 
-        try {
-            const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-            const videoTrack = videoStream.getVideoTracks()[0];
-            addVideoTrack(videoTrack);
-            setIsVideoEnabled(true);
-            renegotiateAll();
-        } catch (err) {
-            console.error("Error starting video:", err);
-        }
-    }
-};
+        peerConnections.current.forEach(pc => {
+            const senders = pc.getSenders();
+            const videoSender = senders.find(s => s.track?.kind === 'video');
+            if (videoSender) {
+                pc.removeTrack(videoSender);
+            }
+        });
+    };
 
-const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-        stopVideoTracks();
-        setIsScreenSharing(false);
-        renegotiateAll();
-    } else {
-        // If camera is on, turn it off
+    // Helper to add video track
+    const addVideoTrack = (track: MediaStreamTrack) => {
+        if (localStreamRef.current) {
+            localStreamRef.current.addTrack(track);
+            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+        }
+
+        peerConnections.current.forEach(pc => {
+            if (localStreamRef.current) {
+                pc.addTrack(track, localStreamRef.current);
+            }
+        });
+    };
+
+    const toggleVideo = async () => {
         if (isVideoEnabled) {
             stopVideoTracks();
             setIsVideoEnabled(false);
-        }
-
-        try {
-            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            const track = stream.getVideoTracks()[0];
-
-            track.onended = () => {
+            renegotiateAll();
+        } else {
+            // If screen sharing is on, turn it off
+            if (isScreenSharing) {
                 stopVideoTracks();
                 setIsScreenSharing(false);
+            }
+
+            try {
+                const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoTrack = videoStream.getVideoTracks()[0];
+                addVideoTrack(videoTrack);
+                setIsVideoEnabled(true);
                 renegotiateAll();
-            };
-
-            addVideoTrack(track);
-            setIsScreenSharing(true);
-            renegotiateAll();
-        } catch (err) {
-            console.error("Error sharing screen:", err);
+            } catch (err) {
+                console.error("Error starting video:", err);
+            }
         }
-    }
-};
+    };
 
-const renegotiateAll = () => {
-    peerConnections.current.forEach((_, userId) => {
-        initiateConnection(userId);
-    });
-};
-
-const initiateConnection = async (targetUserId: string) => {
-    const pc = createPeerConnection(targetUserId);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    if (signalingChannel.current) {
-        await signalingChannel.current.send({
-            type: "broadcast",
-            event: "signal",
-            payload: {
-                type: "offer",
-                data: offer,
-                fromUserId: userId,
-                toUserId: targetUserId
+    const toggleScreenShare = async () => {
+        if (isScreenSharing) {
+            stopVideoTracks();
+            setIsScreenSharing(false);
+            renegotiateAll();
+        } else {
+            // If camera is on, turn it off
+            if (isVideoEnabled) {
+                stopVideoTracks();
+                setIsVideoEnabled(false);
             }
-        });
-    }
-};
 
-const handleOffer = async (fromUserId: string, offer: RTCSessionDescriptionInit) => {
-    const pc = createPeerConnection(fromUserId);
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const track = stream.getVideoTracks()[0];
 
-    if (signalingChannel.current) {
-        await signalingChannel.current.send({
-            type: "broadcast",
-            event: "signal",
-            payload: {
-                type: "answer",
-                data: answer,
-                fromUserId: userId,
-                toUserId: fromUserId
+                track.onended = () => {
+                    stopVideoTracks();
+                    setIsScreenSharing(false);
+                    renegotiateAll();
+                };
+
+                addVideoTrack(track);
+                setIsScreenSharing(true);
+                renegotiateAll();
+            } catch (err) {
+                console.error("Error sharing screen:", err);
             }
+        }
+    };
+
+    const renegotiateAll = () => {
+        peerConnections.current.forEach((_, userId) => {
+            initiateConnection(userId);
         });
-    }
-};
+    };
 
-const handleAnswer = async (fromUserId: string, answer: RTCSessionDescriptionInit) => {
-    const pc = peerConnections.current.get(fromUserId);
-    if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-    }
-};
+    const initiateConnection = async (targetUserId: string) => {
+        const pc = createPeerConnection(targetUserId);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
-const handleIceCandidate = async (fromUserId: string, candidate: RTCIceCandidateInit) => {
-    const pc = peerConnections.current.get(fromUserId);
-    if (pc) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    }
-};
+        if (signalingChannel.current) {
+            await signalingChannel.current.send({
+                type: "broadcast",
+                event: "signal",
+                payload: {
+                    type: "offer",
+                    data: offer,
+                    fromUserId: userId,
+                    toUserId: targetUserId
+                }
+            });
+        }
+    };
 
-return { localStream, remoteStreams, toggleVideo, isVideoEnabled, toggleScreenShare, isScreenSharing };
+    const handleOffer = async (fromUserId: string, offer: RTCSessionDescriptionInit) => {
+        const pc = createPeerConnection(fromUserId);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        if (signalingChannel.current) {
+            await signalingChannel.current.send({
+                type: "broadcast",
+                event: "signal",
+                payload: {
+                    type: "answer",
+                    data: answer,
+                    fromUserId: userId,
+                    toUserId: fromUserId
+                }
+            });
+        }
+    };
+
+    const handleAnswer = async (fromUserId: string, answer: RTCSessionDescriptionInit) => {
+        const pc = peerConnections.current.get(fromUserId);
+        if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+    };
+
+    const handleIceCandidate = async (fromUserId: string, candidate: RTCIceCandidateInit) => {
+        const pc = peerConnections.current.get(fromUserId);
+        if (pc) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+    };
+
+    return { localStream, remoteStreams, toggleVideo, isVideoEnabled, toggleScreenShare, isScreenSharing };
 }
