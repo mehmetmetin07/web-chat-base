@@ -15,6 +15,9 @@ interface VoiceContextType {
     participants: any[]; // consistent with useVoiceState return
     remoteStreams: Map<string, MediaStream>;
     activeChannelName: string | null; // For UI display
+    toggleVideo: () => Promise<void>;
+    isVideoEnabled: boolean;
+    localStream: MediaStream | null;
 }
 
 const VoiceContext = createContext<VoiceContextType | null>(null);
@@ -30,7 +33,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const voiceState = useVoiceState(activeChannelId, activeServerId);
 
     // WebRTC Hook
-    const { remoteStreams } = useWebRTC({
+    const { remoteStreams, toggleVideo, isVideoEnabled, localStream } = useWebRTC({
         channelId: activeChannelId || "",
         userId: voiceState.myState?.user_id || null,
         isMicMuted: voiceState.myState?.muted || false
@@ -98,7 +101,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             isMuted: voiceState.myState?.muted || false,
             participants: voiceState.participants,
             remoteStreams,
-            activeChannelName
+            activeChannelName,
+            toggleVideo,
+            isVideoEnabled,
+            localStream
         }}>
             {children}
             {/* Render Audio Elements Globally */}

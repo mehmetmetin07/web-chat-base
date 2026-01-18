@@ -13,6 +13,7 @@ interface UseWebRTCProps {
 export function useWebRTC({ channelId, userId, isMicMuted }: UseWebRTCProps) {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+    const [isVideoEnabled, setIsVideoEnabled] = useState(false);
     const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
     const signalingChannel = useRef<RealtimeChannel | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -190,6 +191,61 @@ export function useWebRTC({ channelId, userId, isMicMuted }: UseWebRTCProps) {
         return pc;
     };
 
+    const toggleVideo = async () => {
+        if (isVideoEnabled) {
+            // Disable Video
+            if (localStreamRef.current) {
+                localStreamRef.current.getVideoTracks().forEach(track => {
+                    track.stop();
+                    localStreamRef.current!.removeTrack(track);
+                });
+                // Force update state to reflect track removal in UI if necessary
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+            }
+
+            // Remove from PCs
+            peerConnections.current.forEach(pc => {
+                const senders = pc.getSenders();
+                const videoSender = senders.find(s => s.track?.kind === 'video');
+                if (videoSender) {
+                    pc.removeTrack(videoSender);
+                }
+            });
+
+            setIsVideoEnabled(false);
+            renegotiateAll();
+        } else {
+            // Enable Video
+            try {
+                const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoTrack = videoStream.getVideoTracks()[0];
+
+                if (localStreamRef.current) {
+                    localStreamRef.current.addTrack(videoTrack);
+                    setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+                }
+
+                // Add to PCs
+                peerConnections.current.forEach(pc => {
+                    if (localStreamRef.current) {
+                        pc.addTrack(videoTrack, localStreamRef.current);
+                    }
+                });
+
+                setIsVideoEnabled(true);
+                renegotiateAll();
+            } catch (err) {
+                console.error("Error starting video:", err);
+            }
+        }
+    };
+
+    const renegotiateAll = () => {
+        peerConnections.current.forEach((_, userId) => {
+            initiateConnection(userId);
+        });
+    };
+
     const initiateConnection = async (targetUserId: string) => {
         const pc = createPeerConnection(targetUserId);
         const offer = await pc.createOffer();
@@ -243,5 +299,5 @@ export function useWebRTC({ channelId, userId, isMicMuted }: UseWebRTCProps) {
         }
     };
 
-    return { localStream, remoteStreams };
+    return { localStream, remoteStreams, toggleVideo, isVideoEnabled };
 }
