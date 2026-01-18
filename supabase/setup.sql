@@ -239,6 +239,41 @@ ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES public.channel_categories(id) ON DELETE SET NULL;
 ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS position INT DEFAULT 0;
 ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.groups ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'text' CHECK (type IN ('text', 'voice'));
+
+-- =====================
+-- 5.1 VOICE CHAT STATES
+-- =====================
+CREATE TABLE IF NOT EXISTS public.voice_states (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  session_id TEXT, 
+  muted BOOLEAN DEFAULT false,
+  deafened BOOLEAN DEFAULT false,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(channel_id, user_id)
+);
+
+ALTER TABLE public.voice_states ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view voice states" ON public.voice_states;
+CREATE POLICY "Anyone can view voice states"
+  ON public.voice_states FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Users can manage own voice state" ON public.voice_states;
+CREATE POLICY "Users can manage own voice state"
+  ON public.voice_states FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Admins can disconnect users" ON public.voice_states;
+CREATE POLICY "Admins can disconnect users"
+  ON public.voice_states FOR DELETE TO authenticated
+  USING (
+    public.has_server_permission(server_id, 'MODERATE_MEMBERS'::text)
+  );
 
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 

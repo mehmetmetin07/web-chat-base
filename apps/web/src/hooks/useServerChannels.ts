@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/supabase";
 
-type Channel = Database["public"]["Tables"]["groups"]["Row"] & { category_id?: string | null };
+type Channel = Database["public"]["Tables"]["groups"]["Row"] & {
+    category_id?: string | null;
+    type: 'text' | 'voice';
+};
 
 export function useServerChannels(serverId: string | null) {
     const [channels, setChannels] = useState<Channel[]>([]);
@@ -68,7 +71,7 @@ export function useServerChannels(serverId: string | null) {
         };
     }, [serverId]);
 
-    const createChannel = async (name: string, userId: string) => {
+    const createChannel = async (name: string, userId: string, type: 'text' | 'voice' = 'text', categoryId: string | null = null) => {
         if (!serverId) return null;
 
         const { data, error } = await supabase
@@ -78,6 +81,8 @@ export function useServerChannels(serverId: string | null) {
                 server_id: serverId,
                 owner_id: userId,
                 description: "",
+                type,
+                category_id: categoryId
             })
             .select()
             .single();
