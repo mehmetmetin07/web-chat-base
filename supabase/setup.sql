@@ -96,11 +96,8 @@ CREATE POLICY "Server admins can view bans"
   ON public.server_bans FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Server admins can ban" ON public.server_bans;
-CREATE POLICY "Server admins can ban"
-  ON public.server_bans FOR INSERT TO authenticated 
-  WITH CHECK (
-    public.has_server_permission(server_id, 'BAN_MEMBERS'::text)
-  );
+-- Policy moved to end of file (requires helper functions)
+-- CREATE POLICY "Server admins can ban" ...
 
 DROP POLICY IF EXISTS "Server admins can unban" ON public.server_bans;
 CREATE POLICY "Server admins can unban"
@@ -162,11 +159,8 @@ CREATE POLICY "Users can delete own membership"
   ON public.server_members FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Admins can kick members" ON public.server_members;
-CREATE POLICY "Admins can kick members"
-  ON public.server_members FOR DELETE TO authenticated 
-  USING (
-    public.has_server_permission(server_id, 'KICK_MEMBERS'::text)
-  );
+-- Policy moved to end of file (requires helper functions)
+-- CREATE POLICY "Admins can kick members" ...
 
 DROP POLICY IF EXISTS "Admins can update member roles" ON public.server_members;
 CREATE POLICY "Admins can update member roles"
@@ -533,41 +527,9 @@ ON storage.objects FOR UPDATE TO authenticated USING (
 -- ================================================
 -- HELPER FUNCTION FOR PERMISSIONS (Avoids Infinite Recursion)
 -- ================================================
-CREATE OR REPLACE FUNCTION public.has_server_permission(p_server_id UUID, p_permission TEXT)
-RETURNS BOOLEAN AS $$
-DECLARE
-  v_user_id UUID := auth.uid();
-  v_is_owner BOOLEAN;
-  v_has_perm BOOLEAN;
-BEGIN
-  -- 1. Check if user is owner (direct check on servers table)
-  SELECT EXISTS (
-    SELECT 1 FROM public.servers 
-    WHERE id = p_server_id AND owner_id = v_user_id
-  ) INTO v_is_owner;
-  
-  IF v_is_owner THEN
-    RETURN TRUE;
-  END IF;
+-- Helper functions moved to Post-Init section
 
-  -- 2. Check if user has role with specific permission (or ADMINISTRATOR)
-  -- We use a direct query here (SECURITY DEFINER context) to avoid RLS recursion
-  SELECT EXISTS (
-    SELECT 1 
-    FROM public.server_member_roles smr
-    JOIN public.server_roles sr ON sr.id = smr.role_id
-    WHERE smr.server_id = p_server_id 
-      AND smr.user_id = v_user_id
-      AND (
-        (sr.permissions->>'ADMINISTRATOR')::boolean IS TRUE 
-        OR 
-        (sr.permissions->>p_permission)::boolean IS TRUE
-      )
-  ) INTO v_has_perm;
 
-  RETURN v_has_perm;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- =====================
@@ -620,6 +582,8 @@ CREATE POLICY "Authorized users can manage member roles"
   ON public.server_member_roles FOR ALL TO authenticated
   USING (
     public.has_server_permission(server_id, 'MANAGE_ROLES'::text)
+    AND public.get_user_role_position(auth.uid(), server_id) > (SELECT position FROM public.server_roles WHERE id = role_id)
+    AND public.get_user_role_position(auth.uid(), server_id) > public.get_user_role_position(user_id, server_id)
   );
 
 -- Indexes for Role System
@@ -627,6 +591,89 @@ CREATE INDEX IF NOT EXISTS idx_server_roles_server_id ON public.server_roles(ser
 CREATE INDEX IF NOT EXISTS idx_server_member_roles_server_id ON public.server_member_roles(server_id);
 CREATE INDEX IF NOT EXISTS idx_server_member_roles_user_id ON public.server_member_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_server_member_roles_role_id ON public.server_member_roles(role_id);
+
+-- ================================================
+-- HELPER FUNCTIONS (Moved here to ensure tables exist)
+-- ================================================
+
+CREATE OR REPLACE FUNCTION public.has_server_permission(p_server_id UUID, p_permission TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_is_owner BOOLEAN;
+  v_has_perm BOOLEAN;
+BEGIN
+  -- 1. Check if owner
+  SELECT EXISTS (
+    SELECT 1 FROM public.servers 
+    WHERE id = p_server_id AND owner_id = v_user_id
+  ) INTO v_is_owner;
+  
+  IF v_is_owner THEN
+    RETURN TRUE;
+  END IF;
+
+  -- 2. Check permissions
+  SELECT EXISTS (
+    SELECT 1 
+    FROM public.server_member_roles smr
+    JOIN public.server_roles sr ON sr.id = smr.role_id
+    WHERE smr.server_id = p_server_id 
+      AND smr.user_id = v_user_id
+      AND (
+        (sr.permissions->>'ADMINISTRATOR')::boolean IS TRUE 
+        OR 
+        (sr.permissions->>p_permission)::boolean IS TRUE
+      )
+  ) INTO v_has_perm;
+
+  RETURN v_has_perm;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.get_user_role_position(p_user_id UUID, p_server_id UUID)
+RETURNS INT AS $$
+DECLARE
+  v_is_owner BOOLEAN;
+  v_max_pos INT;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM public.servers WHERE id = p_server_id AND owner_id = p_user_id
+  ) INTO v_is_owner;
+  
+  IF v_is_owner THEN
+    RETURN 999999;
+  END IF;
+
+  SELECT COALESCE(MAX(sr.position), -1)
+  INTO v_max_pos
+  FROM public.server_member_roles smr
+  JOIN public.server_roles sr ON sr.id = smr.role_id
+  WHERE smr.server_id = p_server_id AND smr.user_id = p_user_id;
+
+  RETURN v_max_pos;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================
+-- POST-INIT POLICIES via Helper Functions
+-- =====================
+
+DROP POLICY IF EXISTS "Server admins can ban" ON public.server_bans;
+CREATE POLICY "Server admins can ban"
+  ON public.server_bans FOR INSERT TO authenticated 
+  WITH CHECK (
+    public.has_server_permission(server_id, 'BAN_MEMBERS'::text)
+    AND public.get_user_role_position(auth.uid(), server_id) > public.get_user_role_position(user_id, server_id)
+  );
+
+DROP POLICY IF EXISTS "Admins can kick members" ON public.server_members;
+CREATE POLICY "Admins can kick members"
+  ON public.server_members FOR DELETE TO authenticated 
+  USING (
+    public.has_server_permission(server_id, 'KICK_MEMBERS'::text)
+    AND public.get_user_role_position(auth.uid(), server_id) > public.get_user_role_position(user_id, server_id)
+  );
 
 -- Trigger to create default roles when a server is created
 CREATE OR REPLACE FUNCTION public.handle_new_server_roles()
@@ -675,6 +722,14 @@ CREATE TABLE IF NOT EXISTS public.moderation_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Schema updates for new features (safe to run multiple times)
+ALTER TABLE public.moderation_logs ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+-- Update check constraint to include role actions
+ALTER TABLE public.moderation_logs DROP CONSTRAINT IF EXISTS moderation_logs_action_check;
+ALTER TABLE public.moderation_logs ADD CONSTRAINT moderation_logs_action_check 
+  CHECK (action IN ('kick', 'ban', 'unban', 'mute', 'unmute', 'warn', 'timeout', 'role_create', 'role_update', 'role_delete', 'role_assign', 'role_remove'));
+
 ALTER TABLE public.moderation_logs ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Server members can view moderation logs" ON public.moderation_logs;
@@ -689,8 +744,9 @@ CREATE POLICY "Admins can create moderation logs"
   ON public.moderation_logs FOR INSERT TO authenticated
   WITH CHECK (
     public.has_server_permission(server_id, 'MODERATE_MEMBERS'::text) 
-    OR public.has_server_permission(server_id, 'KICK_MEMBERS')
-    OR public.has_server_permission(server_id, 'BAN_MEMBERS')
+    OR public.has_server_permission(server_id, 'KICK_MEMBERS'::text)
+    OR public.has_server_permission(server_id, 'BAN_MEMBERS'::text)
+    OR public.has_server_permission(server_id, 'MANAGE_ROLES'::text)
   );
 
 -- Server mutes (temporary silencing)

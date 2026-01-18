@@ -14,6 +14,7 @@ interface MemberContextMenuProps {
     canManageRoles: boolean;
     canKick: boolean;
     canBan: boolean;
+    myRolePosition: number;
 }
 
 export function MemberContextMenu({
@@ -27,7 +28,8 @@ export function MemberContextMenu({
     onBan,
     canManageRoles,
     canKick,
-    canBan
+    canBan,
+    myRolePosition
 }: MemberContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -71,8 +73,9 @@ export function MemberContextMenu({
                             return (
                                 <button
                                     key={role.id}
+                                    disabled={role.position >= myRolePosition}
                                     onClick={() => hasRole ? onRemoveRole(role.id) : onAssignRole(role.id)}
-                                    className="w-full text-left px-3 py-1.5 hover:bg-gray-700 flex items-center justify-between group"
+                                    className={`w-full text-left px-3 py-1.5 flex items-center justify-between group ${role.position >= myRolePosition ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-700"}`}
                                 >
                                     <div className="flex items-center gap-2">
                                         <div
@@ -96,7 +99,8 @@ export function MemberContextMenu({
                 {canKick && (
                     <button
                         onClick={onKick}
-                        className="w-full text-left px-3 py-2 hover:bg-red-900/50 text-red-400 hover:text-red-300 flex items-center gap-2"
+                        disabled={(member.highestRole?.position || 0) >= myRolePosition}
+                        className={`w-full text-left px-3 py-2 flex items-center gap-2 ${(member.highestRole?.position || 0) >= myRolePosition ? "opacity-50 cursor-not-allowed text-gray-500" : "hover:bg-red-900/50 text-red-400 hover:text-red-300"}`}
                     >
                         <UserMinus className="w-4 h-4" />
                         Kick Member
@@ -105,7 +109,8 @@ export function MemberContextMenu({
                 {canBan && (
                     <button
                         onClick={onBan}
-                        className="w-full text-left px-3 py-2 hover:bg-red-900/50 text-red-400 hover:text-red-300 flex items-center gap-2"
+                        disabled={(member.highestRole?.position || 0) >= myRolePosition}
+                        className={`w-full text-left px-3 py-2 flex items-center gap-2 ${(member.highestRole?.position || 0) >= myRolePosition ? "opacity-50 cursor-not-allowed text-gray-500" : "hover:bg-red-900/50 text-red-400 hover:text-red-300"}`}
                     >
                         <Ban className="w-4 h-4" />
                         Ban Member

@@ -72,6 +72,19 @@ export function useRoles(serverId: string) {
                 .single();
 
             if (error) throw error;
+            if (error) throw error;
+
+            // Log action
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                await supabase.from("moderation_logs").insert({
+                    server_id: serverId,
+                    moderator_id: user.id,
+                    action: "role_create",
+                    metadata: { role_name: name, color, permissions }
+                });
+            }
+
             return data;
         } catch (err: any) {
             setError(err.message);
@@ -89,6 +102,19 @@ export function useRoles(serverId: string) {
                 .single();
 
             if (error) throw error;
+            if (error) throw error;
+
+            // Log action
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                await supabase.from("moderation_logs").insert({
+                    server_id: serverId,
+                    moderator_id: user.id,
+                    action: "role_update",
+                    metadata: { role_id: roleId, updates }
+                });
+            }
+
             return data;
         } catch (err: any) {
             setError(err.message);
@@ -104,6 +130,19 @@ export function useRoles(serverId: string) {
                 .eq("id", roleId);
 
             if (error) throw error;
+
+            // Log action
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                // Find role name from state if possible, otherwise just ID
+                const roleName = roles.find(r => r.id === roleId)?.name || "Unknown Role";
+                await supabase.from("moderation_logs").insert({
+                    server_id: serverId,
+                    moderator_id: user.id,
+                    action: "role_delete",
+                    metadata: { role_id: roleId, role_name: roleName }
+                });
+            }
         } catch (err: any) {
             setError(err.message);
             throw err;
@@ -139,6 +178,19 @@ export function useRoles(serverId: string) {
                 });
 
             if (error) throw error;
+
+            // Log action
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const roleName = roles.find(r => r.id === roleId)?.name || "Unknown Role";
+                await supabase.from("moderation_logs").insert({
+                    server_id: serverId,
+                    moderator_id: user.id,
+                    target_user_id: memberId,
+                    action: "role_assign",
+                    metadata: { role_id: roleId, role_name: roleName }
+                });
+            }
         } catch (err: any) {
             console.error("Error assigning role:", err);
             setError(err.message);
@@ -156,6 +208,19 @@ export function useRoles(serverId: string) {
                 .eq("role_id", roleId);
 
             if (error) throw error;
+
+            // Log action
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const roleName = roles.find(r => r.id === roleId)?.name || "Unknown Role";
+                await supabase.from("moderation_logs").insert({
+                    server_id: serverId,
+                    moderator_id: user.id,
+                    target_user_id: memberId,
+                    action: "role_remove",
+                    metadata: { role_id: roleId, role_name: roleName }
+                });
+            }
         } catch (err: any) {
             console.error("Error removing role:", err);
             setError(err.message);

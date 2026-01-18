@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Ban, UserX, VolumeX, Volume2, AlertTriangle, Undo2 } from "lucide-react";
+import { Ban, UserX, VolumeX, Volume2, AlertTriangle, Undo2, ShieldPlus, ShieldMinus, ShieldAlert, UserPlus, UserMinus } from "lucide-react";
 
 type ModerationLog = {
     id: string;
@@ -12,6 +12,7 @@ type ModerationLog = {
     created_at: string;
     moderator: { full_name: string | null; email: string } | null;
     target: { full_name: string | null; email: string } | null;
+    metadata: any;
 };
 
 const actionIcons: Record<string, React.ReactNode> = {
@@ -22,6 +23,11 @@ const actionIcons: Record<string, React.ReactNode> = {
     unmute: <Volume2 className="h-4 w-4 text-green-500" />,
     warn: <AlertTriangle className="h-4 w-4 text-yellow-500" />,
     timeout: <VolumeX className="h-4 w-4 text-purple-500" />,
+    role_create: <ShieldPlus className="h-4 w-4 text-green-500" />,
+    role_update: <ShieldAlert className="h-4 w-4 text-blue-500" />,
+    role_delete: <ShieldMinus className="h-4 w-4 text-red-500" />,
+    role_assign: <UserPlus className="h-4 w-4 text-green-500" />,
+    role_remove: <UserMinus className="h-4 w-4 text-orange-500" />,
 };
 
 const actionColors: Record<string, string> = {
@@ -32,6 +38,11 @@ const actionColors: Record<string, string> = {
     unmute: "bg-green-50 border-green-200",
     warn: "bg-yellow-50 border-yellow-200",
     timeout: "bg-purple-50 border-purple-200",
+    role_create: "bg-green-50 border-green-200",
+    role_update: "bg-blue-50 border-blue-200",
+    role_delete: "bg-red-50 border-red-200",
+    role_assign: "bg-green-50 border-green-200",
+    role_remove: "bg-orange-50 border-orange-200",
 };
 
 export function ModerationLogsPanel({ serverId }: { serverId: string }) {
@@ -47,6 +58,7 @@ export function ModerationLogsPanel({ serverId }: { serverId: string }) {
                     action,
                     reason,
                     duration_minutes,
+                    metadata,
                     created_at,
                     moderator:moderator_id(full_name, email),
                     target:target_user_id(full_name, email)
@@ -85,9 +97,9 @@ export function ModerationLogsPanel({ serverId }: { serverId: string }) {
                             <span className="font-medium text-gray-900">
                                 {log.moderator?.full_name || log.moderator?.email?.split("@")[0] || "Unknown"}
                             </span>
-                            <span className="text-gray-500">{log.action}</span>
+                            <span className="text-gray-500">{log.action.replace('_', ' ')}</span>
                             <span className="font-medium text-gray-900">
-                                {log.target?.full_name || log.target?.email?.split("@")[0] || "Unknown"}
+                                {log.target?.full_name || log.target?.email?.split("@")[0] || log.metadata?.role_name || (log.action.includes("role") ? "Role" : "Unknown")}
                             </span>
                         </div>
                         {log.reason && (
@@ -95,6 +107,9 @@ export function ModerationLogsPanel({ serverId }: { serverId: string }) {
                         )}
                         {log.duration_minutes && (
                             <p className="text-xs text-gray-600">Duration: {log.duration_minutes} minutes</p>
+                        )}
+                        {log.metadata && log.action.includes("role") && (
+                            <p className="text-xs text-gray-600">Role: {log.metadata.role_name}</p>
                         )}
                         <p className="text-[10px] text-gray-400 mt-1">
                             {new Date(log.created_at).toLocaleString()}
