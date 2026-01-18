@@ -19,6 +19,8 @@ interface VoiceContextType {
     isVideoEnabled: boolean;
     localStream: MediaStream | null;
     userId: string | null;
+    toggleScreenShare: () => Promise<void>;
+    isScreenSharing: boolean;
 }
 
 const VoiceContext = createContext<VoiceContextType | null>(null);
@@ -34,7 +36,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const voiceState = useVoiceState(activeChannelId, activeServerId);
 
     // WebRTC Hook
-    const { remoteStreams, toggleVideo, isVideoEnabled, localStream } = useWebRTC({
+    const { remoteStreams, toggleVideo, isVideoEnabled, localStream, toggleScreenShare, isScreenSharing } = useWebRTC({
         channelId: activeChannelId || "",
         userId: voiceState.myState?.user_id || null,
         isMicMuted: voiceState.myState?.muted || false
@@ -106,7 +108,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             toggleVideo,
             isVideoEnabled,
             localStream,
-            userId: voiceState.myState?.user_id || null
+            userId: voiceState.myState?.user_id || null,
+            toggleScreenShare,
+            isScreenSharing
         }}>
             {children}
             {/* Render Audio Elements Globally */}

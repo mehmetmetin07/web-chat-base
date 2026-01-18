@@ -1,8 +1,6 @@
-"use client";
-
 import { useVoice } from "@/providers/VoiceProvider";
 import { Button } from "@/components/atoms/Button";
-import { Mic, MicOff, Headphones, LogOut, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, Headphones, LogOut, Video, VideoOff, Monitor, MonitorOff } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 function VideoPlayer({ stream }: { stream: MediaStream }) {
@@ -22,7 +20,7 @@ interface VoiceRoomProps {
 }
 
 export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) {
-    const { participants, isConnected, joinVoiceChannel, leaveVoiceChannel, toggleMute, isMuted, toggleVideo, isVideoEnabled, localStream, remoteStreams, userId: myUserId } = useVoice();
+    const { participants, isConnected, joinVoiceChannel, leaveVoiceChannel, toggleMute, isMuted, toggleVideo, isVideoEnabled, localStream, remoteStreams, userId: myUserId, toggleScreenShare, isScreenSharing } = useVoice();
 
     // Helper to get stream for a participant
     const getStream = (userId: string) => {
@@ -124,6 +122,14 @@ export function VoiceRoom({ channelId, serverId, channelName }: VoiceRoomProps) 
                         title={isVideoEnabled ? "Turn Off Camera" : "Turn On Camera"}
                     >
                         {isVideoEnabled ? <Video className="w-8 h-8" /> : <VideoOff className="w-8 h-8" />}
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        onClick={toggleScreenShare}
+                        className={`rounded-full p-4 h-16 w-16 flex items-center justify-center transition-all ${isScreenSharing ? 'bg-white text-gray-900 hover:bg-gray-200' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
+                        title={isScreenSharing ? "Stop Sharing" : "Share Screen"}
+                    >
+                        {isScreenSharing ? <Monitor className="w-8 h-8" /> : <Monitor className="w-8 h-8 opacity-50" />}
                     </Button>
                     <Button
                         variant="secondary"
